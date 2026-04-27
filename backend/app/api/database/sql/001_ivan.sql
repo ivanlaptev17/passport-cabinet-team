@@ -17,7 +17,8 @@ CREATE TABLE staff_general_infos (
 
 CREATE TABLE finance_categories (
     id BIGSERIAL PRIMARY KEY,
-    name TEXT UNIQUE NOT NULL
+    name TEXT UNIQUE NOT NULL,
+    code TEXT UNIQUE NOT NULL
 );
 
 CREATE TABLE finance_records (

@@ -1,6 +1,7 @@
 CREATE TABLE roles (
     id BIGSERIAL PRIMARY KEY,
-    name TEXT UNIQUE NOT NULL
+    name TEXT UNIQUE NOT NULL,
+    code TEXT UNIQUE NOT NULL
 );
 
 CREATE TABLE organizations (
