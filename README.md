@@ -20,6 +20,9 @@ nvm alias default 'lts/*'
 ```npm install``` 
 
 
+вот это важно. хз куда впихнуть, го сейчас
+```npm install react-router-dom``` 
+
 для запуска тестового сервера фронтэнда
 переходите в отдельный терминал
 ```npm run dev```
