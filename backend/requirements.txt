@@ -1,3 +1,6 @@
 fastapi
-uvicorn[standard]
+uvicorn
 asyncpg
+passlib[bcrypt]
+pydantic
+email-validator

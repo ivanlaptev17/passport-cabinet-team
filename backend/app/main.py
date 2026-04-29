@@ -1,5 +1,4 @@
 from fastapi import FastAPI
-from fastapi.routing import APIRoute
 from app.api.main import api_router
 from app.api.database.db import connect_to_db, close_db
 
