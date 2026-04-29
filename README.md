@@ -1,3 +1,26 @@
+# ФРОНТ
+
+установка npm
+```
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+sudo apt install nodejs
+source ~/.bashrc
+nvm install --lts
+nvm use --lts
+nvm alias default 'lts/*'
+```
+
+проверка работоспособности
+```node --version```
+```npm --version```
+
+
+для запуска тестового сервера фронтэнда
+```npm run dev```
+запускаться будет не в контейнере докера! 
+
+
+# БЭК
 устанавливаете себе на комп
 git, docker 
 как установить смотрите сами
