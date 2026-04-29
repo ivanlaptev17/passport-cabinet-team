@@ -66,10 +66,10 @@ async def register(payload: RegisterRequest, conn=Depends(get_connection)):
             created_at,
             updated_at
         """,
-        payload.last_name,
-        payload.first_name,
-        payload.middle_name,
-        payload.phone,
+        None,
+        None,
+        None,
+        None,
         payload.email,
         hash_password(payload.password),
     )

@@ -3,15 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field
 
 
-class Example(BaseModel):
-    example: str
-
-
 class RegisterRequest(BaseModel):
-    last_name: str = Field(min_length=1, max_length=255)
-    first_name: str = Field(min_length=1, max_length=255)
-    middle_name: str | None = Field(default=None, max_length=255)
-    phone: str | None = Field(default=None, max_length=50)
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
 
@@ -23,8 +15,8 @@ class LoginRequest(BaseModel):
 
 class UserResponse(BaseModel):
     id: int
-    last_name: str
-    first_name: str
+    last_name: str | None
+    first_name: str | None
     middle_name: str | None
     phone: str | None
     email: EmailStr
@@ -42,3 +34,4 @@ class AuthResponse(BaseModel):
 
 class LogoutResponse(BaseModel):
     ok: bool = True
+    
