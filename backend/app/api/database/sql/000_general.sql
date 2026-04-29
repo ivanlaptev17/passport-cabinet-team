@@ -14,8 +14,8 @@ CREATE TABLE organizations (
 
 CREATE TABLE users (
     id BIGSERIAL PRIMARY KEY,
-    last_name TEXT NOT NULL,
-    first_name TEXT NOT NULL,
+    last_name TEXT,
+    first_name TEXT,
     middle_name TEXT,
     phone TEXT,
     email TEXT UNIQUE NOT NULL,
