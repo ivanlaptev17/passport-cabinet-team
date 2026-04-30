@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
 
 from app.api.database.db import get_connection
@@ -26,7 +26,7 @@ SESSION_LIFETIME_DAYS = 7
 
 
 @router.post("/register", response_model=AuthResponse)
-async def register(payload: RegisterRequest, conn=Depends(get_connection)):
+async def register(payload: RegisterRequest, response: Response, conn=Depends(get_connection)):
     existing_user = await conn.fetchrow(
         """
         SELECT id
@@ -90,6 +90,14 @@ async def register(payload: RegisterRequest, conn=Depends(get_connection)):
         datetime.utcnow() + timedelta(days=SESSION_LIFETIME_DAYS),
     )
 
+    response.set_cookie(
+        key="access_token",
+        value=raw_token,
+        httponly=True,
+        max_age=SESSION_LIFETIME_DAYS * 86400,
+        samesite="lax",
+    )
+
     return {
         "user": dict(user),
         "access_token": raw_token,
@@ -98,7 +106,7 @@ async def register(payload: RegisterRequest, conn=Depends(get_connection)):
 
 
 @router.post("/login", response_model=AuthResponse)
-async def login(payload: LoginRequest, conn=Depends(get_connection)):
+async def login(payload: LoginRequest, response: Response, conn=Depends(get_connection)):
     user = await conn.fetchrow(
         """
         SELECT
@@ -147,6 +155,14 @@ async def login(payload: LoginRequest, conn=Depends(get_connection)):
         datetime.utcnow() + timedelta(days=SESSION_LIFETIME_DAYS),
     )
 
+    response.set_cookie(
+        key="access_token",
+        value=raw_token,
+        httponly=True,
+        max_age=SESSION_LIFETIME_DAYS * 86400,
+        samesite="lax",
+    )
+
     return {
         "user": {
             "id": user["id"],
@@ -172,10 +188,18 @@ async def me(current_user=Depends(get_current_user)):
 
 @router.post("/logout", response_model=LogoutResponse)
 async def logout(
+    request: Request,
+    response: Response,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     conn=Depends(get_connection),
 ):
-    if credentials is None or credentials.scheme.lower() != "bearer":
+    token = None
+    if credentials is not None and credentials.scheme.lower() == "bearer":
+        token = credentials.credentials
+    else:
+        token = request.cookies.get("access_token")
+
+    if token is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
@@ -188,8 +212,9 @@ async def logout(
         WHERE token_hash = $1
           AND revoked_at IS NULL
         """,
-        hash_token(credentials.credentials),
+        hash_token(token),
     )
 
+    response.delete_cookie("access_token")
     return {"ok": True}
     

@@ -3,7 +3,7 @@ import hashlib
 import hmac
 import secrets
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.api.database.db import get_connection
@@ -45,16 +45,23 @@ def hash_token(token: str) -> str:
 
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     conn=Depends(get_connection),
 ):
-    if credentials is None or credentials.scheme.lower() != "bearer":
+    token = None
+    if credentials is not None and credentials.scheme.lower() == "bearer":
+        token = credentials.credentials
+    else:
+        token = request.cookies.get("access_token")
+
+    if token is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
         )
 
-    token_hash = hash_token(credentials.credentials)
+    token_hash = hash_token(token)
 
     row = await conn.fetchrow(
         """
