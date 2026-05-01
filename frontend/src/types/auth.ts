@@ -1,18 +1,32 @@
 export interface User {
-    id: number;
-    first_name: string;
-    last_name: string;
-    middle_name: string;
-    phone: string;
-    email: string;
-    role_id: number;
-    is_active: boolean;
-    created_at: string;
-    updated_at: string;
+  id: number;
+  last_name: string | null;
+  first_name: string | null;
+  middle_name: string | null;
+  phone: string | null;
+  email: string;
+  role_id: number | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface AuthResponse {
-    user: User;
-    access_token: string;
-    token_type: string;
+  user: User;
+  access_token: string;
+  token_type: string;
+}
+
+export interface LoginPayload {
+  email: string;
+  password: string;
+}
+
+export interface RegisterPayload {
+  email: string;
+  password: string;
+}
+
+export interface LogoutResponse {
+  ok: boolean;
 }

@@ -1,43 +1,39 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { loginUser, registerUser } from "../../api/auth";
-import { saveToken } from "../../utils/storage";
-import "./AuthPage.css";
+import { login, register } from "../../api/auth";
+import { setAccessToken } from "../../utils/storage";
 
-export default function AuthPage() {
-  const [isLogin, setIsLogin] = useState(true);
+const AuthPage = () => {
+  const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-
-  const navigate = useNavigate();
+  const [error, setError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError("");
 
     try {
-      const response = isLogin
-        ? await loginUser(email, password)
-        : await registerUser(email, password);
+      const data =
+        mode === "login"
+          ? await login({ email, password })
+          : await register({ email, password });
 
-      saveToken(response.access_token);
+      setAccessToken(data.access_token);
 
-      // ВОТ ЭТО НЕ ХВАТАЛО
-      navigate("/profile");
-
-    } catch (error) {
-      console.error(error);
-      alert("Ошибка запроса");
+      window.location.href = "/profile";
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Ошибка авторизации");
     }
   };
 
   return (
-    <div className="auth-page">
-      <form className="auth-form" onSubmit={handleSubmit}>
-        <h1>{isLogin ? "Вход" : "Регистрация"}</h1>
+    <div>
+      <h1>{mode === "login" ? "Вход" : "Регистрация"}</h1>
 
+      <form onSubmit={handleSubmit}>
         <input
           type="email"
-          placeholder="Email"
+          placeholder="Почта"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
@@ -50,17 +46,19 @@ export default function AuthPage() {
         />
 
         <button type="submit">
-          {isLogin ? "Войти" : "Зарегистрироваться"}
-        </button>
-
-        <button
-          type="button"
-          className="switch-button"
-          onClick={() => setIsLogin(!isLogin)}
-        >
-          {isLogin ? "Перейти к регистрации" : "Перейти ко входу"}
+          {mode === "login" ? "Войти" : "Зарегистрироваться"}
         </button>
       </form>
+
+      {error && <p>{error}</p>}
+
+      <button onClick={() => setMode(mode === "login" ? "register" : "login")}>
+        {mode === "login"
+          ? "Нет аккаунта? Регистрация"
+          : "Уже есть аккаунт? Вход"}
+      </button>
     </div>
   );
-}
+};
+
+export default AuthPage;

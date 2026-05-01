@@ -1,51 +1,68 @@
-const API_URL = "http://localhost:8000";
+const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
-function getAuthHeaders() {
-  const token = localStorage.getItem("access_token");
+function getAccessToken(): string | null {
+  return localStorage.getItem("access_token");
+}
 
-  return {
+function getHeaders(withAuth = false): HeadersInit {
+  const headers: HeadersInit = {
     "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
+
+  if (withAuth) {
+    const token = getAccessToken();
+
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+  }
+
+  return headers;
+}
+
+async function apiRequest<T>(
+  path: string,
+  options: RequestInit = {},
+  withAuth = false,
+): Promise<T> {
+  const response = await fetch(`${API_URL}${path}`, {
+    ...options,
+    headers: {
+      ...getHeaders(withAuth),
+      ...(options.headers ?? {}),
+    },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Request failed: ${response.status}`);
+  }
+
+  return response.json();
 }
 
 export async function registerUser(email: string, password: string) {
-  const response = await fetch(`${API_URL}/auth/register`, {
+  return apiRequest("/auth/register", {
     method: "POST",
-    headers: getAuthHeaders(),
     body: JSON.stringify({ email, password }),
   });
-
-  if (!response.ok) {
-    throw new Error("Register failed");
-  }
-
-  return response.json();
 }
 
 export async function loginUser(email: string, password: string) {
-  const response = await fetch(`${API_URL}/auth/login`, {
+  return apiRequest("/auth/login", {
     method: "POST",
-    headers: getAuthHeaders(),
     body: JSON.stringify({ email, password }),
   });
-
-  if (!response.ok) {
-    throw new Error("Login failed");
-  }
-
-  return response.json();
 }
 
 export async function getMe() {
-  const response = await fetch(`${API_URL}/auth/me`, {
+  return apiRequest("/auth/me", {
     method: "GET",
-    headers: getAuthHeaders(),
-  });
+  }, true);
+}
 
-  if (!response.ok) {
-    throw new Error("Get me failed");
-  }
-
-  return response.json();
+export async function logoutUser() {
+  return apiRequest("/auth/logout", {
+    method: "POST",
+  }, true);
 }

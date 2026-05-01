@@ -1,13 +1,17 @@
-const TOKEN_KEY = "access_token";
+const ACCESS_TOKEN_KEY = "access_token";
 
-export const saveToken = (token: string) => {
-  localStorage.setItem(TOKEN_KEY, token);
+export const getAccessToken = (): string | null => {
+  return localStorage.getItem(ACCESS_TOKEN_KEY);
 };
 
-export const getToken = () => {
-  return localStorage.getItem(TOKEN_KEY);
+export const setAccessToken = (token: string): void => {
+  localStorage.setItem(ACCESS_TOKEN_KEY, token);
 };
 
-export const removeToken = () => {
-  localStorage.removeItem(TOKEN_KEY);
+export const removeAccessToken = (): void => {
+  localStorage.removeItem(ACCESS_TOKEN_KEY);
+};
+
+export const hasAccessToken = (): boolean => {
+  return Boolean(getAccessToken());
 };
