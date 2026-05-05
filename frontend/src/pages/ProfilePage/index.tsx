@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getMe, logout } from "../../api/auth";
+import { getMe, logoutUser } from "../../api/auth";
 import type { User } from "../../types/auth";
 import { removeAccessToken } from "../../utils/storage";
 
@@ -23,7 +23,7 @@ const ProfilePage = () => {
 
   const handleLogout = async () => {
     try {
-      await logout();
+      await logoutUser();
     } catch {
     } finally {
       removeAccessToken();

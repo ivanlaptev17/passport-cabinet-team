@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { login, register } from "../../api/auth";
+import { loginUser, registerUser } from "../../api/auth";
 import { setAccessToken } from "../../utils/storage";
 
 const AuthPage = () => {
@@ -15,11 +15,10 @@ const AuthPage = () => {
     try {
       const data =
         mode === "login"
-          ? await login({ email, password })
-          : await register({ email, password });
+          ? await loginUser(email, password)
+          : await registerUser(email, password);
 
       setAccessToken(data.access_token);
-
       window.location.href = "/profile";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка авторизации");
