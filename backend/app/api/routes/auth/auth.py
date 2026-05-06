@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status, Cookie
 from fastapi.security import HTTPAuthorizationCredentials
 
 from app.api.database.db import get_connection
@@ -26,7 +26,9 @@ SESSION_LIFETIME_DAYS = 7
 
 
 @router.post("/register", response_model=AuthResponse)
-async def register(payload: RegisterRequest, response: Response, conn=Depends(get_connection)):
+async def register(
+    payload: RegisterRequest, response: Response, conn=Depends(get_connection)
+):
     existing_user = await conn.fetchrow(
         """
         SELECT id
@@ -93,7 +95,7 @@ async def register(payload: RegisterRequest, response: Response, conn=Depends(ge
     response.set_cookie(
         key="access_token",
         value=raw_token,
-        httponly=True,
+        httponly=False,
         max_age=SESSION_LIFETIME_DAYS * 86400,
         samesite="lax",
     )
@@ -106,7 +108,9 @@ async def register(payload: RegisterRequest, response: Response, conn=Depends(ge
 
 
 @router.post("/login", response_model=AuthResponse)
-async def login(payload: LoginRequest, response: Response, conn=Depends(get_connection)):
+async def login(
+    payload: LoginRequest, response: Response, conn=Depends(get_connection)
+):
     user = await conn.fetchrow(
         """
         SELECT
@@ -158,7 +162,7 @@ async def login(payload: LoginRequest, response: Response, conn=Depends(get_conn
     response.set_cookie(
         key="access_token",
         value=raw_token,
-        httponly=True,
+        httponly=False,
         max_age=SESSION_LIFETIME_DAYS * 86400,
         samesite="lax",
     )
@@ -217,4 +221,14 @@ async def logout(
 
     response.delete_cookie("access_token")
     return {"ok": True}
-    
+
+
+@router.get("/set")
+def set_cookie(response: Response):
+    response.set_cookie("mykey", "myvalue", httponly=True)
+    return {"status": "ok"}
+
+
+@router.get("/get")
+def get_cookie(mykey: str = Cookie(None)):
+    return {"mykey": mykey}
