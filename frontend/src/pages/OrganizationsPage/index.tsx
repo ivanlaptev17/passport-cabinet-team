@@ -1,0 +1,208 @@
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  fetchOrganizations,
+  updateOrganization,
+  type Organization,
+} from "../../api/data";
+import Layout from "../../components/Layout";
+import ProfilePanel from "../../components/ProfilePanel";
+
+export default function OrganizationsPage() {
+  const [orgs, setOrgs] = useState<Organization[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [editing, setEditing] = useState<Organization | null>(null);
+  const [form, setForm] = useState<Partial<Organization>>({});
+  const [saving, setSaving] = useState(false);
+
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    fetchOrganizations()
+      .then(setOrgs)
+      .catch((e: Error) => {
+        if (e.message === "401") navigate("/");
+        else setError("Не удалось загрузить данные");
+      })
+      .finally(() => setLoading(false));
+  }, [navigate]);
+
+  const openEdit = (org: Organization) => {
+    setEditing(org);
+    setForm({
+      name: org.name,
+      director_name: org.director_name ?? "",
+      governance_body: org.governance_body ?? "",
+      founder: org.founder ?? "",
+    });
+  };
+
+  const closeEdit = () => {
+    setEditing(null);
+    setForm({});
+  };
+
+  const saveEdit = async () => {
+    if (!editing) return;
+    setSaving(true);
+    try {
+      const updated = await updateOrganization(editing.id, {
+        name: form.name || undefined,
+        director_name: form.director_name || undefined,
+        governance_body: form.governance_body || undefined,
+        founder: form.founder || undefined,
+      });
+      setOrgs((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+      closeEdit();
+    } catch {
+      alert("Ошибка при сохранении");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const field = (key: keyof typeof form, label: string) => (
+    <div className="mb-3">
+      <label className="form-label small fw-semibold">{label}</label>
+      <input
+        type="text"
+        className="form-control"
+        value={form[key] ?? ""}
+        onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+      />
+    </div>
+  );
+
+  return (
+    <Layout>
+      <div className="row g-3">
+        {/* Main table */}
+        <div className="col-lg-9">
+          <div className="d-flex align-items-center gap-3 mb-3">
+            <button
+              className="btn btn-sm btn-outline-secondary"
+              onClick={() => navigate("/dashboard")}
+            >
+              <i className="fa fa-arrow-left me-1" />
+              Назад
+            </button>
+            <div>
+              <h5 className="mb-0 fw-semibold">Организации</h5>
+              <small className="text-muted">Материально-техническая база</small>
+            </div>
+          </div>
+
+          {loading && (
+            <div className="text-center py-5">
+              <div className="spinner-border text-secondary" />
+            </div>
+          )}
+          {error && <div className="alert alert-danger">{error}</div>}
+
+          {!loading && !error && (
+            <div className="card shadow-sm">
+              <div className="table-responsive">
+                <table className="table table-bordered mb-0">
+                  <thead style={{ background: "#efefef" }}>
+                    <tr>
+                      <th>Название учреждения</th>
+                      <th>Директор</th>
+                      <th>Учредитель</th>
+                      <th>Управляющий орган</th>
+                      <th>Адрес</th>
+                      <th style={{ width: 60 }} className="text-center">
+                        <i className="fa fa-cog" />
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {orgs.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="text-center text-muted py-4">
+                          Данные отсутствуют
+                        </td>
+                      </tr>
+                    ) : (
+                      orgs.map((org) => (
+                        <tr key={org.id}>
+                          <td>
+                            <strong>{org.name}</strong>
+                          </td>
+                          <td>{org.director_name ?? "—"}</td>
+                          <td>{org.founder ?? "—"}</td>
+                          <td>{org.governance_body ?? "—"}</td>
+                          <td>{org.address ?? "—"}</td>
+                          <td className="text-center">
+                            <button
+                              className="btn btn-sm btn-outline-secondary py-0 px-2"
+                              title="Редактировать"
+                              onClick={() => openEdit(org)}
+                            >
+                              <i className="fa fa-pencil" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Profile panel */}
+        <div className="col-lg-3">
+          <ProfilePanel />
+        </div>
+      </div>
+
+      {/* Edit modal */}
+      {editing && (
+        <div
+          className="modal show d-block"
+          style={{ background: "rgba(0,0,0,0.45)" }}
+          onClick={closeEdit}
+        >
+          <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-content">
+              <div
+                className="modal-header"
+                style={{ background: "#37474f", color: "white" }}
+              >
+                <h6 className="modal-title mb-0 fw-semibold">
+                  <i className="fa fa-pencil me-2" />
+                  Редактировать организацию
+                </h6>
+                <button className="btn-close btn-close-white" onClick={closeEdit} />
+              </div>
+              <div className="modal-body">
+                {field("name", "Название учреждения")}
+                {field("director_name", "ФИО директора")}
+                {field("governance_body", "Управляющий орган")}
+                {field("founder", "Учредитель")}
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-secondary btn-sm" onClick={closeEdit}>
+                  Отмена
+                </button>
+                <button
+                  className="btn btn-sm text-white"
+                  style={{ background: "#37474f" }}
+                  disabled={saving}
+                  onClick={() => void saveEdit()}
+                >
+                  {saving && (
+                    <span className="spinner-border spinner-border-sm me-1" />
+                  )}
+                  Сохранить
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </Layout>
+  );
+}

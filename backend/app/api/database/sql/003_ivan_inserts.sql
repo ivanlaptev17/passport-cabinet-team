@@ -27,8 +27,9 @@ INSERT INTO organizations (name, director_name, governance_body, founder) VALUES
     ('Школа №1', 'Иванов Иван Иванович', 'Управляющий совет', 'Департамент образования')
 ON CONFLICT DO NOTHING;
 
+-- password: Test1234!  (PBKDF2-SHA256 + base64)
 INSERT INTO users (email, password_hash, last_name, first_name, middle_name, phone, role_id) VALUES
-    ('test@example.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5fYyZ5bC5V7Ze', 'Иванов', 'Иван', 'Иванович', '+7-999-123-45-67', (SELECT id FROM roles WHERE name = 'Администратор'))
+    ('test@example.com', 'xNxT2rUzVukiOCVvX8qeKPvp8iWsxnvp2znPj667u+hWsx4Qh3e8pIjrIoaoTAyS', 'Иванов', 'Иван', 'Иванович', '+7-999-123-45-67', (SELECT id FROM roles WHERE name = 'Администратор'))
 ON CONFLICT (email) DO NOTHING;
 
 INSERT INTO organization_users (organization_id, user_id) VALUES
