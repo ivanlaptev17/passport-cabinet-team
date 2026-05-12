@@ -8,7 +8,7 @@ import {
   type Position,
 } from "../../api/data";
 import Layout from "../../components/Layout";
-import ProfilePanel from "../../components/ProfilePanel";
+
 
 const CATEGORY_LABELS: Record<string, string> = {
   ADM: "АУП",
@@ -157,10 +157,7 @@ export default function EmployeesPage() {
           )}
         </div>
 
-        {/* Profile panel */}
-        <div className="col-lg-3">
-          <ProfilePanel />
-        </div>
+        
       </div>
 
       {/* Edit modal */}

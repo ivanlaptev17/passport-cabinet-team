@@ -6,7 +6,7 @@ import {
   type Building,
 } from "../../api/data";
 import Layout from "../../components/Layout";
-import ProfilePanel from "../../components/ProfilePanel";
+
 
 export default function BuildingsPage() {
   const [buildings, setBuildings] = useState<Building[]>([]);
@@ -141,10 +141,7 @@ export default function BuildingsPage() {
           )}
         </div>
 
-        {/* Profile panel */}
-        <div className="col-lg-3">
-          <ProfilePanel />
-        </div>
+        
       </div>
 
       {/* Edit modal */}

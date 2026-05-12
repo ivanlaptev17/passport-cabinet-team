@@ -5,6 +5,8 @@ import DashboardPage from "../pages/DashboardPage";
 import EmployeesPage from "../pages/EmployeesPage";
 import OrganizationsPage from "../pages/OrganizationsPage";
 import BuildingsPage from "../pages/BuildingsPage";
+import ProfilePage from "../pages/ProfilePage/index";
+import SettingsPage from "../pages/SettingsPage";
 
 function AuthGuard({ element }: { element: React.ReactElement }) {
   const { user, loading } = useAuth();
@@ -33,7 +35,6 @@ function AppRoutes() {
 
   return (
     <Routes>
-      {/* Если уже авторизован — сразу на дашборд */}
       <Route
         path="/"
         element={user ? <Navigate to="/dashboard" replace /> : <AuthPage />}
@@ -42,6 +43,8 @@ function AppRoutes() {
       <Route path="/employees" element={<AuthGuard element={<EmployeesPage />} />} />
       <Route path="/organizations" element={<AuthGuard element={<OrganizationsPage />} />} />
       <Route path="/buildings" element={<AuthGuard element={<BuildingsPage />} />} />
+      <Route path="/profile" element={<AuthGuard element={<ProfilePage />} />} />
+      <Route path="/settings" element={<AuthGuard element={<SettingsPage />} />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   );

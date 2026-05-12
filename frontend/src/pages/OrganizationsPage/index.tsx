@@ -6,7 +6,7 @@ import {
   type Organization,
 } from "../../api/data";
 import Layout from "../../components/Layout";
-import ProfilePanel from "../../components/ProfilePanel";
+
 
 export default function OrganizationsPage() {
   const [orgs, setOrgs] = useState<Organization[]>([]);
@@ -152,10 +152,7 @@ export default function OrganizationsPage() {
           )}
         </div>
 
-        {/* Profile panel */}
-        <div className="col-lg-3">
-          <ProfilePanel />
-        </div>
+        
       </div>
 
       {/* Edit modal */}

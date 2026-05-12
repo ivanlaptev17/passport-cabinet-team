@@ -18,10 +18,20 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    raw = base64.b64decode(password_hash.encode())
-    salt, saved_dk = raw[:16], raw[16:]
-    check_dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 100_000)
-    return hmac.compare_digest(saved_dk, check_dk)
+    try:
+        raw = base64.b64decode(password_hash.encode("utf-8"))
+        salt = raw[:16]
+        saved_dk = raw[16:]
+
+        check_dk = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            salt,
+            100_000,
+        )
+        return hmac.compare_digest(saved_dk, check_dk)
+    except Exception:
+        return False
 
 
 def generate_session_token() -> str:
