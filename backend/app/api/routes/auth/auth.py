@@ -62,17 +62,19 @@ async def register(payload: RegisterRequest, response: Response, conn=Depends(ge
 
     raw_token = await _create_session(user["id"], conn)
     response.set_cookie(value=raw_token, **_COOKIE_PARAMS)
-    return dict(user)
+    return {**dict(user), "role_code": None, "role_name": None}
 
 
 @router.post("/login", response_model=UserResponse)
 async def login(payload: LoginRequest, response: Response, conn=Depends(get_connection)):
     user = await conn.fetchrow(
         """
-        SELECT id, last_name, first_name, middle_name, phone, email,
-               password_hash, role_id, is_active, created_at, updated_at
-        FROM users
-        WHERE email = $1
+        SELECT u.id, u.last_name, u.first_name, u.middle_name, u.phone, u.email,
+               u.password_hash, u.role_id, u.is_active, u.created_at, u.updated_at,
+               r.code AS role_code, r.name AS role_name
+        FROM users u
+        LEFT JOIN roles r ON r.id = u.role_id
+        WHERE u.email = $1
         """,
         payload.email,
     )
@@ -94,6 +96,8 @@ async def login(payload: LoginRequest, response: Response, conn=Depends(get_conn
         "phone": user["phone"],
         "email": user["email"],
         "role_id": user["role_id"],
+        "role_code": user["role_code"],
+        "role_name": user["role_name"],
         "is_active": user["is_active"],
         "created_at": user["created_at"],
         "updated_at": user["updated_at"],

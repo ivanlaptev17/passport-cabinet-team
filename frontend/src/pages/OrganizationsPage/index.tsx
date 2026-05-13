@@ -6,6 +6,7 @@ import {
   type Organization,
 } from "../../api/data";
 import Layout from "../../components/Layout";
+import { useAuth } from "../../contexts/AuthContext";
 
 
 export default function OrganizationsPage() {
@@ -15,8 +16,18 @@ export default function OrganizationsPage() {
   const [editing, setEditing] = useState<Organization | null>(null);
   const [form, setForm] = useState<Partial<Organization>>({});
   const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState("");
 
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const canEdit = user?.role_code !== "MINOBR";
+
+  const q = search.toLowerCase();
+  const filteredOrgs = orgs.filter((o) =>
+    o.name.toLowerCase().includes(q) ||
+    (o.director_name ?? "").toLowerCase().includes(q) ||
+    (o.founder ?? "").toLowerCase().includes(q)
+  );
 
   useEffect(() => {
     fetchOrganizations()
@@ -93,6 +104,16 @@ export default function OrganizationsPage() {
             </div>
           </div>
 
+          <div className="mb-3">
+            <input
+              type="text"
+              className="form-control"
+              placeholder="Поиск по названию, директору, учредителю..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
           {loading && (
             <div className="text-center py-5">
               <div className="spinner-border text-secondary" />
@@ -111,20 +132,21 @@ export default function OrganizationsPage() {
                       <th>Учредитель</th>
                       <th>Управляющий орган</th>
                       <th>Адрес</th>
-                      <th style={{ width: 60 }} className="text-center">
-                        <i className="fa fa-cog" />
-                      </th>
+                      {canEdit && (
+                        <th style={{ width: 60 }} className="text-center">
+                          <i className="fa fa-cog" />
+                        </th>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
-                    {orgs.length === 0 ? (
+                    {filteredOrgs.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="text-center text-muted py-4">
                           Данные отсутствуют
                         </td>
                       </tr>
-                    ) : (
-                      orgs.map((org) => (
+                    ) : filteredOrgs.map((org) => (
                         <tr key={org.id}>
                           <td>
                             <strong>{org.name}</strong>
@@ -133,18 +155,19 @@ export default function OrganizationsPage() {
                           <td>{org.founder ?? "—"}</td>
                           <td>{org.governance_body ?? "—"}</td>
                           <td>{org.address ?? "—"}</td>
-                          <td className="text-center">
-                            <button
-                              className="btn btn-sm btn-outline-secondary py-0 px-2"
-                              title="Редактировать"
-                              onClick={() => openEdit(org)}
-                            >
-                              <i className="fa fa-pencil" />
-                            </button>
-                          </td>
+                          {canEdit && (
+                            <td className="text-center">
+                              <button
+                                className="btn btn-sm btn-outline-secondary py-0 px-2"
+                                title="Редактировать"
+                                onClick={() => openEdit(org)}
+                              >
+                                <i className="fa fa-pencil" />
+                              </button>
+                            </td>
+                          )}
                         </tr>
-                      ))
-                    )}
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -156,7 +179,7 @@ export default function OrganizationsPage() {
       </div>
 
       {/* Edit modal */}
-      {editing && (
+      {canEdit && editing && (
         <div
           className="modal show d-block"
           style={{ background: "rgba(0,0,0,0.45)" }}

@@ -68,6 +68,91 @@ export const fetchOrganizations = () =>
   apiFetch<Organization[]>("/data/organizations");
 export const fetchBuildings = () => apiFetch<Building[]>("/data/buildings");
 
+export type StaffInfo = {
+  id: number;
+  organization_id: number;
+  organization: string;
+  attribute: string;
+  value: string | null;
+  real_value: string | null;
+  is_filled: boolean;
+};
+
+export type FinanceRecord = {
+  id: number;
+  organization_id: number;
+  organization: string;
+  category: string | null;
+  category_code: string | null;
+  attribute: string;
+  value: number | null;
+  is_filled: boolean;
+};
+
+export type Subsidy = {
+  id: number;
+  organization_id: number;
+  organization: string;
+  name: string;
+  amount: number | null;
+};
+
+export type Contract = {
+  id: number;
+  organization_id: number;
+  organization: string;
+  name: string;
+  link: string | null;
+};
+
+export type Contingent = {
+  id: number;
+  organization_id: number;
+  organization: string;
+  attribute: string;
+  value: number | null;
+  is_filled: boolean;
+};
+
+export type SchoolClass = {
+  id: number;
+  organization_id: number;
+  organization: string;
+  name: string | null;
+  grade_level: number | null;
+  student_count: number | null;
+};
+
+export type Parallel = {
+  id: number;
+  organization_id: number;
+  organization: string;
+  title: string;
+  values: number[];
+  is_filled: boolean;
+};
+
+export type EducationActivity = {
+  id: number;
+  organization_id: number;
+  organization: string;
+  activity_type: string | null;
+  attribute: string;
+  value: string | null;
+  is_filled: boolean;
+  is_heading: boolean;
+  item_order: number | null;
+};
+
+export const fetchStaffInfo = () => apiFetch<StaffInfo[]>("/data/staff-info");
+export const fetchFinance = () => apiFetch<FinanceRecord[]>("/data/finance");
+export const fetchSubsidies = () => apiFetch<Subsidy[]>("/data/subsidies");
+export const fetchContracts = () => apiFetch<Contract[]>("/data/contracts");
+export const fetchContingent = () => apiFetch<Contingent[]>("/data/contingent");
+export const fetchClasses = () => apiFetch<SchoolClass[]>("/data/classes");
+export const fetchParallels = () => apiFetch<Parallel[]>("/data/parallels");
+export const fetchEducation = () => apiFetch<EducationActivity[]>("/data/education");
+
 // ── Updaters ──────────────────────────────────────────────────────────────────
 
 export const updateEmployee = (id: number, body: { fio?: string; position_id?: number }) =>

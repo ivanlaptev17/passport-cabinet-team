@@ -1,3 +1,5 @@
+export type RoleCode = 'ADMIN' | 'DIRECTOR' | 'MINOBR' | 'SCHOOL_STAFF';
+
 export interface User {
   id: number;
   last_name: string | null;
@@ -6,6 +8,8 @@ export interface User {
   phone: string | null;
   email: string;
   role_id: number | null;
+  role_code: RoleCode | null;
+  role_name: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;

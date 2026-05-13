@@ -6,6 +6,7 @@ import {
   type Building,
 } from "../../api/data";
 import Layout from "../../components/Layout";
+import { useAuth } from "../../contexts/AuthContext";
 
 
 export default function BuildingsPage() {
@@ -16,8 +17,18 @@ export default function BuildingsPage() {
   const [formName, setFormName] = useState("");
   const [formAddress, setFormAddress] = useState("");
   const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState("");
 
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const canEdit = user?.role_code !== "MINOBR";
+
+  const q = search.toLowerCase();
+  const filteredBuildings = buildings.filter((b) =>
+    (b.name ?? "").toLowerCase().includes(q) ||
+    (b.address ?? "").toLowerCase().includes(q) ||
+    b.organization.toLowerCase().includes(q)
+  );
 
   useEffect(() => {
     fetchBuildings()
@@ -82,6 +93,16 @@ export default function BuildingsPage() {
             </div>
           </div>
 
+          <div className="mb-3">
+            <input
+              type="text"
+              className="form-control"
+              placeholder="Поиск по названию, адресу, организации..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
           {loading && (
             <div className="text-center py-5">
               <div className="spinner-border text-secondary" />
@@ -100,20 +121,22 @@ export default function BuildingsPage() {
                       <th>Адрес</th>
                       <th>Организация</th>
                       <th>Дата ввода</th>
-                      <th style={{ width: 60 }} className="text-center">
-                        <i className="fa fa-cog" />
-                      </th>
+                      {canEdit && (
+                        <th style={{ width: 60 }} className="text-center">
+                          <i className="fa fa-cog" />
+                        </th>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
-                    {buildings.length === 0 ? (
+                    {filteredBuildings.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="text-center text-muted py-4">
                           Данные отсутствуют
                         </td>
                       </tr>
                     ) : (
-                      buildings.map((b) => (
+                      filteredBuildings.map((b) => (
                         <tr key={b.id}>
                           <td className="text-muted small">{b.id}</td>
                           <td>
@@ -122,15 +145,17 @@ export default function BuildingsPage() {
                           <td>{b.address ?? "—"}</td>
                           <td>{b.organization}</td>
                           <td>{formatDate(b.created_at)}</td>
-                          <td className="text-center">
-                            <button
-                              className="btn btn-sm btn-outline-secondary py-0 px-2"
-                              title="Редактировать"
-                              onClick={() => openEdit(b)}
-                            >
-                              <i className="fa fa-pencil" />
-                            </button>
-                          </td>
+                          {canEdit && (
+                            <td className="text-center">
+                              <button
+                                className="btn btn-sm btn-outline-secondary py-0 px-2"
+                                title="Редактировать"
+                                onClick={() => openEdit(b)}
+                              >
+                                <i className="fa fa-pencil" />
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       ))
                     )}
@@ -145,7 +170,7 @@ export default function BuildingsPage() {
       </div>
 
       {/* Edit modal */}
-      {editing && (
+      {canEdit && editing && (
         <div
           className="modal show d-block"
           style={{ background: "rgba(0,0,0,0.45)" }}

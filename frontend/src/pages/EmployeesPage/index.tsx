@@ -8,6 +8,7 @@ import {
   type Position,
 } from "../../api/data";
 import Layout from "../../components/Layout";
+import { useAuth } from "../../contexts/AuthContext";
 
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -27,10 +28,23 @@ export default function EmployeesPage() {
   const [saving, setSaving] = useState(false);
 
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const canEdit = user?.role_code !== "MINOBR";
   const [searchParams] = useSearchParams();
+  const [search, setSearch] = useState("");
+
   const category = searchParams.get("cat") ?? undefined;
 
   const pageTitle = category ? CATEGORY_LABELS[category] ?? "Сотрудники" : "Кадровый состав";
+
+  const filteredEmployees = employees.filter((e) => {
+    const q = search.toLowerCase();
+    return (
+      (e.fio ?? "").toLowerCase().includes(q) ||
+      (e.position ?? "").toLowerCase().includes(q) ||
+      e.organization.toLowerCase().includes(q)
+    );
+  });
 
   useEffect(() => {
     setLoading(true);
@@ -96,6 +110,16 @@ export default function EmployeesPage() {
             </div>
           </div>
 
+          <div className="mb-3">
+            <input
+              type="text"
+              className="form-control"
+              placeholder="Поиск по ФИО, должности, организации..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
           {loading && (
             <div className="text-center py-5">
               <div className="spinner-border text-secondary" />
@@ -114,20 +138,21 @@ export default function EmployeesPage() {
                       <th>Должность</th>
                       <th>Категория</th>
                       <th>Организация</th>
-                      <th style={{ width: 60 }} className="text-center">
-                        <i className="fa fa-cog" />
-                      </th>
+                      {canEdit && (
+                        <th style={{ width: 60 }} className="text-center">
+                          <i className="fa fa-cog" />
+                        </th>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
-                    {employees.length === 0 ? (
+                    {filteredEmployees.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="text-center text-muted py-4">
                           Данные отсутствуют
                         </td>
                       </tr>
-                    ) : (
-                      employees.map((emp) => (
+                    ) : filteredEmployees.map((emp) => (
                         <tr key={emp.id}>
                           <td className="text-muted small">{emp.id}</td>
                           <td className="fw-semibold">{emp.fio ?? "—"}</td>
@@ -138,18 +163,19 @@ export default function EmployeesPage() {
                             </span>
                           </td>
                           <td>{emp.organization}</td>
-                          <td className="text-center">
-                            <button
-                              className="btn btn-xs btn-sm btn-outline-secondary py-0 px-2"
-                              title="Редактировать"
-                              onClick={() => openEdit(emp)}
-                            >
-                              <i className="fa fa-pencil" />
-                            </button>
-                          </td>
+                          {canEdit && (
+                            <td className="text-center">
+                              <button
+                                className="btn btn-xs btn-sm btn-outline-secondary py-0 px-2"
+                                title="Редактировать"
+                                onClick={() => openEdit(emp)}
+                              >
+                                <i className="fa fa-pencil" />
+                              </button>
+                            </td>
+                          )}
                         </tr>
-                      ))
-                    )}
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -161,7 +187,7 @@ export default function EmployeesPage() {
       </div>
 
       {/* Edit modal */}
-      {editing && (
+      {canEdit && editing && (
         <div
           className="modal show d-block"
           style={{ background: "rgba(0,0,0,0.45)" }}
