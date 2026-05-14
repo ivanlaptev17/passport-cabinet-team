@@ -97,7 +97,7 @@ export default function BuildingsPage() {
             <input
               type="text"
               className="form-control"
-              placeholder="Поиск по названию, адресу, организации..."
+              placeholder="Поиск..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -111,7 +111,11 @@ export default function BuildingsPage() {
           {error && <div className="alert alert-danger">{error}</div>}
 
           {!loading && !error && (
-            <div className="card shadow-sm">
+            <>
+              <div className="text-muted small mb-2">
+                <span className="fw-semibold">{filteredBuildings.length}</span> — всего
+              </div>
+              <div className="card shadow-sm">
               <div className="table-responsive">
                 <table className="table table-bordered mb-0">
                   <thead style={{ background: "#efefef" }}>
@@ -119,8 +123,7 @@ export default function BuildingsPage() {
                       <th style={{ width: 50 }}>ID</th>
                       <th>Название</th>
                       <th>Адрес</th>
-                      <th>Организация</th>
-                      <th>Дата ввода</th>
+                      <th>Дата создания</th>
                       {canEdit && (
                         <th style={{ width: 60 }} className="text-center">
                           <i className="fa fa-cog" />
@@ -131,7 +134,7 @@ export default function BuildingsPage() {
                   <tbody>
                     {filteredBuildings.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="text-center text-muted py-4">
+                        <td colSpan={canEdit ? 5 : 4} className="text-center text-muted py-4">
                           Данные отсутствуют
                         </td>
                       </tr>
@@ -143,7 +146,6 @@ export default function BuildingsPage() {
                             <strong>{b.name ?? "—"}</strong>
                           </td>
                           <td>{b.address ?? "—"}</td>
-                          <td>{b.organization}</td>
                           <td>{formatDate(b.created_at)}</td>
                           {canEdit && (
                             <td className="text-center">
@@ -163,10 +165,9 @@ export default function BuildingsPage() {
                 </table>
               </div>
             </div>
+            </>
           )}
         </div>
-
-        
       </div>
 
       {/* Edit modal */}

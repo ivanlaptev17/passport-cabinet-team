@@ -87,9 +87,8 @@ export default function Layout({ children }: Props) {
         }}
       >
         <div className="container-fluid px-4 py-2">
-          <span className="navbar-brand fw-bold fs-4 d-flex align-items-center mb-0">
-            <i className="fa fa-graduation-cap me-2" />
-            Кабинет директора
+          <span className="navbar-brand d-flex align-items-center mb-0">
+            <img src="/logo.png" alt="ИЦТО" style={{ height: 52, objectFit: "contain" }} />
           </span>
 
           <ul className="navbar-nav flex-row gap-2 me-auto ms-4 align-items-center">

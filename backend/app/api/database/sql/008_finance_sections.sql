@@ -1,0 +1,2 @@
+ALTER TABLE finance_records
+    ADD COLUMN IF NOT EXISTS section_code TEXT NOT NULL DEFAULT 'FINANCE';

@@ -99,6 +99,11 @@ async def list_employees(
         """
         SELECT
             e.id,
+            e.organization_id,
+            e.last_name,
+            e.first_name,
+            e.middle_name,
+            e.phone,
             e.fio,
             p.id   AS position_id,
             p.name AS position,
@@ -113,7 +118,7 @@ async def list_employees(
         LEFT JOIN categories c ON c.id = p.category_id
         WHERE ($1::TEXT IS NULL OR c.code = $1)
           AND ($2::bigint[] IS NULL OR e.organization_id = ANY($2))
-        ORDER BY e.id
+        ORDER BY e.last_name, e.first_name
         """,
         category,
         allowed,
@@ -129,17 +134,8 @@ async def list_organizations(
     allowed = await _org_ids_filter(current_user, conn)
     rows = await conn.fetch(
         """
-        SELECT
-            o.id,
-            o.name,
-            o.director_name,
-            o.governance_body,
-            o.founder,
-            b.address
+        SELECT o.id, o.name, o.director_name, o.governance_body, o.founder
         FROM organizations o
-        LEFT JOIN LATERAL (
-            SELECT address FROM buildings WHERE organization_id = o.id LIMIT 1
-        ) b ON TRUE
         WHERE ($1::bigint[] IS NULL OR o.id = ANY($1))
         ORDER BY o.id
         """,
@@ -201,13 +197,11 @@ async def list_finance(
     rows = await conn.fetch(
         """
         SELECT fr.id, fr.organization_id, o.name AS organization,
-               fc.name AS category, fc.code AS category_code,
-               fr.attribute, fr.value, fr.is_filled
+               fr.section_code, fr.attribute, fr.value, fr.is_filled
         FROM finance_records fr
         JOIN organizations o ON o.id = fr.organization_id
-        LEFT JOIN finance_categories fc ON fc.id = fr.category_id
         WHERE ($1::bigint[] IS NULL OR fr.organization_id = ANY($1))
-        ORDER BY fr.organization_id, fc.code, fr.id
+        ORDER BY fr.organization_id, fr.section_code, fr.id
         """,
         allowed,
     )
@@ -252,6 +246,27 @@ async def list_contracts(
         allowed,
     )
     return [dict(r) for r in rows]
+
+
+@router.get("/finance-summary")
+async def finance_summary(
+    current_user=Depends(get_current_user),
+    conn=Depends(get_connection),
+):
+    allowed = await _org_ids_filter(current_user, conn)
+    expenses = await conn.fetchval(
+        "SELECT COALESCE(SUM(value), 0) FROM finance_records WHERE ($1::bigint[] IS NULL OR organization_id = ANY($1))",
+        allowed,
+    )
+    budget = await conn.fetchval(
+        "SELECT COALESCE(SUM(amount), 0) FROM subsidies WHERE ($1::bigint[] IS NULL OR organization_id = ANY($1))",
+        allowed,
+    )
+    return {
+        "budget": float(budget),
+        "expenses": float(expenses),
+        "remainder": float(budget) - float(expenses),
+    }
 
 
 @router.get("/contingent")

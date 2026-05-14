@@ -48,7 +48,7 @@ export default function EducationPage() {
         <input
           type="text"
           className="form-control"
-          placeholder="Поиск по показателю или организации..."
+          placeholder="Поиск..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />

@@ -108,7 +108,7 @@ export default function OrganizationsPage() {
             <input
               type="text"
               className="form-control"
-              placeholder="Поиск по названию, директору, учредителю..."
+              placeholder="Поиск..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -122,16 +122,19 @@ export default function OrganizationsPage() {
           {error && <div className="alert alert-danger">{error}</div>}
 
           {!loading && !error && (
-            <div className="card shadow-sm">
+            <>
+              <div className="text-muted small mb-2">
+                <span className="fw-semibold">{filteredOrgs.length}</span> — всего
+              </div>
+              <div className="card shadow-sm">
               <div className="table-responsive">
                 <table className="table table-bordered mb-0">
                   <thead style={{ background: "#efefef" }}>
                     <tr>
-                      <th>Название учреждения</th>
-                      <th>Директор</th>
+                      <th>Название школы</th>
+                      <th>ФИО директора</th>
+                      <th>Орган самоуправления</th>
                       <th>Учредитель</th>
-                      <th>Управляющий орган</th>
-                      <th>Адрес</th>
                       {canEdit && (
                         <th style={{ width: 60 }} className="text-center">
                           <i className="fa fa-cog" />
@@ -142,7 +145,7 @@ export default function OrganizationsPage() {
                   <tbody>
                     {filteredOrgs.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="text-center text-muted py-4">
+                        <td colSpan={canEdit ? 5 : 4} className="text-center text-muted py-4">
                           Данные отсутствуют
                         </td>
                       </tr>
@@ -152,9 +155,8 @@ export default function OrganizationsPage() {
                             <strong>{org.name}</strong>
                           </td>
                           <td>{org.director_name ?? "—"}</td>
-                          <td>{org.founder ?? "—"}</td>
                           <td>{org.governance_body ?? "—"}</td>
-                          <td>{org.address ?? "—"}</td>
+                          <td>{org.founder ?? "—"}</td>
                           {canEdit && (
                             <td className="text-center">
                               <button
@@ -172,10 +174,9 @@ export default function OrganizationsPage() {
                 </table>
               </div>
             </div>
+            </>
           )}
         </div>
-
-        
       </div>
 
       {/* Edit modal */}

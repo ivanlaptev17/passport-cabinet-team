@@ -32,6 +32,11 @@ export type Position = {
 
 export type Employee = {
   id: number;
+  organization_id: number;
+  last_name: string | null;
+  first_name: string | null;
+  middle_name: string | null;
+  phone: string | null;
   fio: string | null;
   position_id: number | null;
   position: string | null;
@@ -47,7 +52,6 @@ export type Organization = {
   director_name: string | null;
   governance_body: string | null;
   founder: string | null;
-  address: string | null;
 };
 
 export type Building = {
@@ -82,8 +86,7 @@ export type FinanceRecord = {
   id: number;
   organization_id: number;
   organization: string;
-  category: string | null;
-  category_code: string | null;
+  section_code: string;
   attribute: string;
   value: number | null;
   is_filled: boolean;
@@ -144,6 +147,9 @@ export type EducationActivity = {
   item_order: number | null;
 };
 
+export type FinanceSummary = { budget: number; expenses: number; remainder: number };
+
+export const fetchFinanceSummary = () => apiFetch<FinanceSummary>("/data/finance-summary");
 export const fetchStaffInfo = () => apiFetch<StaffInfo[]>("/data/staff-info");
 export const fetchFinance = () => apiFetch<FinanceRecord[]>("/data/finance");
 export const fetchSubsidies = () => apiFetch<Subsidy[]>("/data/subsidies");
