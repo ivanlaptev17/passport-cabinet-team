@@ -42,6 +42,22 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+_RESTRICTED_ROLES = {"DIRECTOR", "SCHOOL_STAFF"}
+
+
+async def get_user_org_ids(user_id: int, conn) -> list[int]:
+    rows = await conn.fetch(
+        "SELECT organization_id FROM organization_users WHERE user_id = $1",
+        user_id,
+    )
+    return [r["organization_id"] for r in rows]
+
+
+def require_write(current_user: dict) -> None:
+    if current_user.get("role_code") == "MINOBR":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Read-only role")
+
+
 async def get_current_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
@@ -60,9 +76,11 @@ async def get_current_user(
         """
         SELECT u.id, u.last_name, u.first_name, u.middle_name,
                u.phone, u.email, u.role_id, u.is_active,
-               u.created_at, u.updated_at
+               u.created_at, u.updated_at,
+               r.code AS role_code, r.name AS role_name
         FROM user_sessions s
         JOIN users u ON u.id = s.user_id
+        LEFT JOIN roles r ON r.id = u.role_id
         WHERE s.token_hash = $1
           AND s.revoked_at IS NULL
           AND s.expires_at > NOW()

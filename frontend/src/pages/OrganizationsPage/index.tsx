@@ -6,6 +6,7 @@ import {
   type Organization,
 } from "../../api/data";
 import Layout from "../../components/Layout";
+import { useAuth } from "../../contexts/AuthContext";
 
 
 export default function OrganizationsPage() {
@@ -15,8 +16,18 @@ export default function OrganizationsPage() {
   const [editing, setEditing] = useState<Organization | null>(null);
   const [form, setForm] = useState<Partial<Organization>>({});
   const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState("");
 
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const canEdit = user?.role_code !== "MINOBR";
+
+  const q = search.toLowerCase();
+  const filteredOrgs = orgs.filter((o) =>
+    o.name.toLowerCase().includes(q) ||
+    (o.director_name ?? "").toLowerCase().includes(q) ||
+    (o.founder ?? "").toLowerCase().includes(q)
+  );
 
   useEffect(() => {
     fetchOrganizations()
@@ -93,6 +104,16 @@ export default function OrganizationsPage() {
             </div>
           </div>
 
+          <div className="mb-3">
+            <input
+              type="text"
+              className="form-control"
+              placeholder="Поиск..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
           {loading && (
             <div className="text-center py-5">
               <div className="spinner-border text-secondary" />
@@ -101,62 +122,65 @@ export default function OrganizationsPage() {
           {error && <div className="alert alert-danger">{error}</div>}
 
           {!loading && !error && (
-            <div className="card shadow-sm">
+            <>
+              <div className="text-muted small mb-2">
+                <span className="fw-semibold">{filteredOrgs.length}</span> — всего
+              </div>
+              <div className="card shadow-sm">
               <div className="table-responsive">
                 <table className="table table-bordered mb-0">
                   <thead style={{ background: "#efefef" }}>
                     <tr>
-                      <th>Название учреждения</th>
-                      <th>Директор</th>
+                      <th>Название школы</th>
+                      <th>ФИО директора</th>
+                      <th>Орган самоуправления</th>
                       <th>Учредитель</th>
-                      <th>Управляющий орган</th>
-                      <th>Адрес</th>
-                      <th style={{ width: 60 }} className="text-center">
-                        <i className="fa fa-cog" />
-                      </th>
+                      {canEdit && (
+                        <th style={{ width: 60 }} className="text-center">
+                          <i className="fa fa-cog" />
+                        </th>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
-                    {orgs.length === 0 ? (
+                    {filteredOrgs.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="text-center text-muted py-4">
+                        <td colSpan={canEdit ? 5 : 4} className="text-center text-muted py-4">
                           Данные отсутствуют
                         </td>
                       </tr>
-                    ) : (
-                      orgs.map((org) => (
+                    ) : filteredOrgs.map((org) => (
                         <tr key={org.id}>
                           <td>
                             <strong>{org.name}</strong>
                           </td>
                           <td>{org.director_name ?? "—"}</td>
-                          <td>{org.founder ?? "—"}</td>
                           <td>{org.governance_body ?? "—"}</td>
-                          <td>{org.address ?? "—"}</td>
-                          <td className="text-center">
-                            <button
-                              className="btn btn-sm btn-outline-secondary py-0 px-2"
-                              title="Редактировать"
-                              onClick={() => openEdit(org)}
-                            >
-                              <i className="fa fa-pencil" />
-                            </button>
-                          </td>
+                          <td>{org.founder ?? "—"}</td>
+                          {canEdit && (
+                            <td className="text-center">
+                              <button
+                                className="btn btn-sm btn-outline-secondary py-0 px-2"
+                                title="Редактировать"
+                                onClick={() => openEdit(org)}
+                              >
+                                <i className="fa fa-pencil" />
+                              </button>
+                            </td>
+                          )}
                         </tr>
-                      ))
-                    )}
+                    ))}
                   </tbody>
                 </table>
               </div>
             </div>
+            </>
           )}
         </div>
-
-        
       </div>
 
       {/* Edit modal */}
-      {editing && (
+      {canEdit && editing && (
         <div
           className="modal show d-block"
           style={{ background: "rgba(0,0,0,0.45)" }}

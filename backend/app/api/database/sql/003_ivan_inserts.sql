@@ -1,7 +1,8 @@
 INSERT INTO roles (name, code) VALUES
     ('Администратор', 'ADMIN'),
-    ('Пользователь', 'USER'),
-    ('Руководитель', 'MANAGER')
+    ('Директор', 'DIRECTOR'),
+    ('Минобр', 'MINOBR'),
+    ('Сотрудник школы', 'SCHOOL_STAFF')
 ON CONFLICT (code) DO NOTHING;
 
 INSERT INTO finance_categories (name, code) VALUES
@@ -29,11 +30,15 @@ ON CONFLICT DO NOTHING;
 
 -- password: Test1234!  (PBKDF2-SHA256 + base64)
 INSERT INTO users (email, password_hash, last_name, first_name, middle_name, phone, role_id) VALUES
-    ('test@example.com', 'xNxT2rUzVukiOCVvX8qeKPvp8iWsxnvp2znPj667u+hWsx4Qh3e8pIjrIoaoTAyS', 'Иванов', 'Иван', 'Иванович', '+7-999-123-45-67', (SELECT id FROM roles WHERE name = 'Администратор'))
+    ('admin@test.com',    'xNxT2rUzVukiOCVvX8qeKPvp8iWsxnvp2znPj667u+hWsx4Qh3e8pIjrIoaoTAyS', 'Иванов',   'Иван',    'Иванович',  '+7-999-100-00-01', (SELECT id FROM roles WHERE code = 'ADMIN')),
+    ('director@test.com', 'xNxT2rUzVukiOCVvX8qeKPvp8iWsxnvp2znPj667u+hWsx4Qh3e8pIjrIoaoTAyS', 'Петров',   'Пётр',    'Петрович',  '+7-999-100-00-02', (SELECT id FROM roles WHERE code = 'DIRECTOR')),
+    ('minobr@test.com',   'xNxT2rUzVukiOCVvX8qeKPvp8iWsxnvp2znPj667u+hWsx4Qh3e8pIjrIoaoTAyS', 'Сидоров',  'Сидор',   'Сидорович', '+7-999-100-00-03', (SELECT id FROM roles WHERE code = 'MINOBR')),
+    ('staff@test.com',    'xNxT2rUzVukiOCVvX8qeKPvp8iWsxnvp2znPj667u+hWsx4Qh3e8pIjrIoaoTAyS', 'Кузнецова','Мария',   'Алексеевна','+7-999-100-00-04', (SELECT id FROM roles WHERE code = 'SCHOOL_STAFF'))
 ON CONFLICT (email) DO NOTHING;
 
-INSERT INTO organization_users (organization_id, user_id) VALUES
-    (1, 1)
+
+INSERT INTO organization_users (organization_id, user_id)
+SELECT 1, id FROM users WHERE email IN ('admin@test.com', 'director@test.com', 'staff@test.com')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO buildings (organization_id, name, address, created_at) VALUES

@@ -21,6 +21,8 @@ class UserResponse(BaseModel):
     phone: str | None
     email: EmailStr
     role_id: int | None
+    role_code: str | None
+    role_name: str | None
     is_active: bool
     created_at: datetime
     updated_at: datetime
