@@ -8,7 +8,6 @@ import {
 import Layout from "../../components/Layout";
 import { useAuth } from "../../contexts/AuthContext";
 
-
 export default function OrganizationsPage() {
   const [orgs, setOrgs] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(true);
@@ -20,13 +19,16 @@ export default function OrganizationsPage() {
 
   const navigate = useNavigate();
   const { user } = useAuth();
-  const canEdit = user?.role_code !== "MINOBR";
+
+  const canEdit =
+    user?.role_code === "ADMIN" || user?.role_code === "DIRECTOR";
 
   const q = search.toLowerCase();
-  const filteredOrgs = orgs.filter((o) =>
-    o.name.toLowerCase().includes(q) ||
-    (o.director_name ?? "").toLowerCase().includes(q) ||
-    (o.founder ?? "").toLowerCase().includes(q)
+  const filteredOrgs = orgs.filter(
+    (o) =>
+      o.name.toLowerCase().includes(q) ||
+      (o.director_name ?? "").toLowerCase().includes(q) ||
+      (o.founder ?? "").toLowerCase().includes(q),
   );
 
   useEffect(() => {
@@ -40,6 +42,8 @@ export default function OrganizationsPage() {
   }, [navigate]);
 
   const openEdit = (org: Organization) => {
+    if (!canEdit) return;
+
     setEditing(org);
     setForm({
       name: org.name,
@@ -55,7 +59,8 @@ export default function OrganizationsPage() {
   };
 
   const saveEdit = async () => {
-    if (!editing) return;
+    if (!editing || !canEdit) return;
+
     setSaving(true);
     try {
       const updated = await updateOrganization(editing.id, {
@@ -88,7 +93,6 @@ export default function OrganizationsPage() {
   return (
     <Layout>
       <div className="row g-3">
-        {/* Main table */}
         <div className="col-lg-9">
           <div className="d-flex align-items-center gap-3 mb-3">
             <button
@@ -119,67 +123,74 @@ export default function OrganizationsPage() {
               <div className="spinner-border text-secondary" />
             </div>
           )}
+
           {error && <div className="alert alert-danger">{error}</div>}
 
           {!loading && !error && (
             <>
               <div className="text-muted small mb-2">
-                <span className="fw-semibold">{filteredOrgs.length}</span> — всего
+                <span className="fw-semibold">{filteredOrgs.length}</span> —
+                всего
               </div>
+
               <div className="card shadow-sm">
-              <div className="table-responsive">
-                <table className="table table-bordered mb-0">
-                  <thead style={{ background: "#efefef" }}>
-                    <tr>
-                      <th>Название школы</th>
-                      <th>ФИО директора</th>
-                      <th>Орган самоуправления</th>
-                      <th>Учредитель</th>
-                      {canEdit && (
-                        <th style={{ width: 60 }} className="text-center">
-                          <i className="fa fa-cog" />
-                        </th>
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredOrgs.length === 0 ? (
+                <div className="table-responsive">
+                  <table className="table table-bordered mb-0">
+                    <thead style={{ background: "#efefef" }}>
                       <tr>
-                        <td colSpan={canEdit ? 5 : 4} className="text-center text-muted py-4">
-                          Данные отсутствуют
-                        </td>
+                        <th>Название школы</th>
+                        <th>ФИО директора</th>
+                        <th>Орган самоуправления</th>
+                        <th>Учредитель</th>
+                        {canEdit && (
+                          <th style={{ width: 60 }} className="text-center">
+                            <i className="fa fa-cog" />
+                          </th>
+                        )}
                       </tr>
-                    ) : filteredOrgs.map((org) => (
-                        <tr key={org.id}>
-                          <td>
-                            <strong>{org.name}</strong>
+                    </thead>
+                    <tbody>
+                      {filteredOrgs.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={canEdit ? 5 : 4}
+                            className="text-center text-muted py-4"
+                          >
+                            Данные отсутствуют
                           </td>
-                          <td>{org.director_name ?? "—"}</td>
-                          <td>{org.governance_body ?? "—"}</td>
-                          <td>{org.founder ?? "—"}</td>
-                          {canEdit && (
-                            <td className="text-center">
-                              <button
-                                className="btn btn-sm btn-outline-secondary py-0 px-2"
-                                title="Редактировать"
-                                onClick={() => openEdit(org)}
-                              >
-                                <i className="fa fa-pencil" />
-                              </button>
-                            </td>
-                          )}
                         </tr>
-                    ))}
-                  </tbody>
-                </table>
+                      ) : (
+                        filteredOrgs.map((org) => (
+                          <tr key={org.id}>
+                            <td>
+                              <strong>{org.name}</strong>
+                            </td>
+                            <td>{org.director_name ?? "—"}</td>
+                            <td>{org.governance_body ?? "—"}</td>
+                            <td>{org.founder ?? "—"}</td>
+                            {canEdit && (
+                              <td className="text-center">
+                                <button
+                                  className="btn btn-sm btn-outline-secondary py-0 px-2"
+                                  title="Редактировать"
+                                  onClick={() => openEdit(org)}
+                                >
+                                  <i className="fa fa-pencil" />
+                                </button>
+                              </td>
+                            )}
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
             </>
           )}
         </div>
       </div>
 
-      {/* Edit modal */}
       {canEdit && editing && (
         <div
           className="modal show d-block"
@@ -196,7 +207,11 @@ export default function OrganizationsPage() {
                   <i className="fa fa-pencil me-2" />
                   Редактировать организацию
                 </h6>
-                <button className="btn-close btn-close-white" onClick={closeEdit} />
+                <button
+                  type="button"
+                  className="btn-close btn-close-white"
+                  onClick={closeEdit}
+                />
               </div>
               <div className="modal-body">
                 {field("name", "Название учреждения")}

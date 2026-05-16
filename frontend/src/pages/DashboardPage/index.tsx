@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "../../components/Layout";
-import { fetchFinanceSummary, type FinanceSummary } from "../../api/data";
+import {
+  fetchFinanceSummary,
+  fetchIncidentsWidget,
+  type FinanceSummary,
+  type IncidentWidgetItem,
+} from "../../api/data";
 
 type CardProps = {
   icon: string;
@@ -13,15 +18,16 @@ type CardProps = {
 
 const cardThemeMap: Record<string, { color: string; soft: string }> = {
   success: { color: "#198754", soft: "#e9f7ef" },
-  danger:  { color: "#dc3545", soft: "#fdecef" },
+  danger: { color: "#dc3545", soft: "#fdecef" },
   primary: { color: "#0d6efd", soft: "#eaf2ff" },
   warning: { color: "#fd7e14", soft: "#fff3e0" },
-  purple:  { color: "#6f42c1", soft: "#f0ebff" },
-  teal:    { color: "#0d9488", soft: "#e6f7f6" },
+  purple: { color: "#6f42c1", soft: "#f0ebff" },
+  teal: { color: "#0d9488", soft: "#e6f7f6" },
 };
 
 function DashCard({ icon, color, title, subtitle, onClick }: CardProps) {
   const theme = cardThemeMap[color] ?? cardThemeMap.primary;
+
   return (
     <div className="col-xl-6 col-md-6 mb-3">
       <div
@@ -33,18 +39,36 @@ function DashCard({ icon, color, title, subtitle, onClick }: CardProps) {
           <div className="d-flex align-items-center gap-3">
             <div
               className="d-flex align-items-center justify-content-center rounded-4"
-              style={{ width: 48, height: 48, background: theme.soft, color: theme.color, fontSize: 20, flexShrink: 0 }}
+              style={{
+                width: 48,
+                height: 48,
+                background: theme.soft,
+                color: theme.color,
+                fontSize: 20,
+                flexShrink: 0,
+              }}
             >
               <i className={`fa ${icon}`} />
             </div>
             <div>
-              <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>{title}</h6>
-              <div className="text-muted" style={{ fontSize: 12 }}>{subtitle}</div>
+              <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>
+                {title}
+              </h6>
+              <div className="text-muted" style={{ fontSize: 12 }}>
+                {subtitle}
+              </div>
             </div>
           </div>
+
           <div
             className="d-flex align-items-center justify-content-center rounded-circle dashboard-arrow"
-            style={{ width: 28, height: 28, background: "#f3f5f7", color: "#5f6b73", flexShrink: 0 }}
+            style={{
+              width: 28,
+              height: 28,
+              background: "#f3f5f7",
+              color: "#5f6b73",
+              flexShrink: 0,
+            }}
           >
             <i className="fa fa-arrow-right" style={{ fontSize: 10 }} />
           </div>
@@ -54,39 +78,65 @@ function DashCard({ icon, color, title, subtitle, onClick }: CardProps) {
   );
 }
 
-function SectionHeader({ title, subtitle }: { title: string; subtitle: string }) {
+function SectionHeader({
+  title,
+  subtitle,
+}: {
+  title: string;
+  subtitle: string;
+}) {
   return (
     <div className="col-12 mt-3 mb-1">
       <h6 className="fw-bold mb-0">{title}</h6>
-      <p className="text-muted mb-0" style={{ fontSize: 13 }}>{subtitle}</p>
+      <p className="text-muted mb-0" style={{ fontSize: 13 }}>
+        {subtitle}
+      </p>
     </div>
   );
 }
 
 const fmt = (n: number) =>
-  n.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  n.toLocaleString("ru-RU", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  });
 
 function FinancePulse({ data }: { data: FinanceSummary | null }) {
   const isPositive = (data?.remainder ?? 0) >= 0;
 
   return (
-    <div className="card border-0 shadow-sm rounded-4 h-100" style={{ background: "#fff" }}>
+    <div
+      className="card border-0 shadow-sm rounded-4 h-100"
+      style={{ background: "#fff" }}
+    >
       <div className="card-body p-4">
         <div className="d-flex align-items-center gap-2 mb-4">
           <div
             className="d-flex align-items-center justify-content-center rounded-3"
-            style={{ width: 36, height: 36, background: "#fff3e0", color: "#fd7e14", fontSize: 16 }}
+            style={{
+              width: 36,
+              height: 36,
+              background: "#fff3e0",
+              color: "#fd7e14",
+              fontSize: 16,
+            }}
           >
             <i className="fa fa-chart-line" />
           </div>
           <div>
-            <div className="fw-bold" style={{ fontSize: 15 }}>Финансовый пульс</div>
-            <div className="text-muted" style={{ fontSize: 12 }}>Остаток бюджета</div>
+            <div className="fw-bold" style={{ fontSize: 15 }}>
+              Финансовый пульс
+            </div>
+            <div className="text-muted" style={{ fontSize: 12 }}>
+              Остаток бюджета
+            </div>
           </div>
         </div>
 
         {data == null ? (
-          <div className="text-center py-3"><div className="spinner-border spinner-border-sm text-secondary" /></div>
+          <div className="text-center py-3">
+            <div className="spinner-border spinner-border-sm text-secondary" />
+          </div>
         ) : (
           <>
             <div
@@ -98,39 +148,90 @@ function FinancePulse({ data }: { data: FinanceSummary | null }) {
                 lineHeight: 1.1,
               }}
             >
-              {isPositive ? "" : "−"}{fmt(Math.abs(data.remainder))}
-              <div style={{ fontSize: 13, fontWeight: 400, color: "#8c9aaa", marginTop: 4 }}>
+              {isPositive ? "" : "−"}
+              {fmt(Math.abs(data.remainder))}
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 400,
+                  color: "#8c9aaa",
+                  marginTop: 4,
+                }}
+              >
                 руб.
               </div>
             </div>
 
             <div className="d-flex flex-column gap-2">
-              <div className="d-flex justify-content-between align-items-center py-2 px-3 rounded-3" style={{ background: "#f8fafb" }}>
+              <div
+                className="d-flex justify-content-between align-items-center py-2 px-3 rounded-3"
+                style={{ background: "#f8fafb" }}
+              >
                 <div className="d-flex align-items-center gap-2">
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#198754", display: "inline-block" }} />
-                  <span className="text-muted" style={{ fontSize: 13 }}>Субсидии</span>
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: "#198754",
+                      display: "inline-block",
+                    }}
+                  />
+                  <span className="text-muted" style={{ fontSize: 13 }}>
+                    Субсидии
+                  </span>
                 </div>
-                <span className="fw-semibold" style={{ fontSize: 13 }}>{fmt(data.budget)} ₽</span>
+                <span className="fw-semibold" style={{ fontSize: 13 }}>
+                  {fmt(data.budget)} ₽
+                </span>
               </div>
-              <div className="d-flex justify-content-between align-items-center py-2 px-3 rounded-3" style={{ background: "#f8fafb" }}>
+
+              <div
+                className="d-flex justify-content-between align-items-center py-2 px-3 rounded-3"
+                style={{ background: "#f8fafb" }}
+              >
                 <div className="d-flex align-items-center gap-2">
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#dc3545", display: "inline-block" }} />
-                  <span className="text-muted" style={{ fontSize: 13 }}>Расходы</span>
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: "#dc3545",
+                      display: "inline-block",
+                    }}
+                  />
+                  <span className="text-muted" style={{ fontSize: 13 }}>
+                    Расходы
+                  </span>
                 </div>
-                <span className="fw-semibold" style={{ fontSize: 13 }}>{fmt(data.expenses)} ₽</span>
+                <span className="fw-semibold" style={{ fontSize: 13 }}>
+                  {fmt(data.expenses)} ₽
+                </span>
               </div>
             </div>
 
             <div className="mt-3">
-              <div className="d-flex justify-content-between mb-1" style={{ fontSize: 11, color: "#8c9aaa" }}>
+              <div
+                className="d-flex justify-content-between mb-1"
+                style={{ fontSize: 11, color: "#8c9aaa" }}
+              >
                 <span>Использовано</span>
-                <span>{data.budget > 0 ? Math.round((data.expenses / data.budget) * 100) : 0}%</span>
+                <span>
+                  {data.budget > 0
+                    ? Math.round((data.expenses / data.budget) * 100)
+                    : 0}
+                  %
+                </span>
               </div>
               <div className="progress" style={{ height: 6, borderRadius: 99 }}>
                 <div
                   className="progress-bar"
                   style={{
-                    width: `${data.budget > 0 ? Math.min((data.expenses / data.budget) * 100, 100) : 0}%`,
+                    width: `${
+                      data.budget > 0
+                        ? Math.min((data.expenses / data.budget) * 100, 100)
+                        : 0
+                    }%`,
                     background: isPositive ? "#198754" : "#dc3545",
                     borderRadius: 99,
                   }}
@@ -144,72 +245,438 @@ function FinancePulse({ data }: { data: FinanceSummary | null }) {
   );
 }
 
+function severityLabel(severity: string) {
+  switch (severity) {
+    case "HIGH":
+      return "Высокий";
+    case "MEDIUM":
+      return "Средний";
+    case "LOW":
+      return "Низкий";
+    default:
+      return severity;
+  }
+}
+
+function severityMeta(severity: string) {
+  switch (severity) {
+    case "HIGH":
+      return {
+        color: "#dc3545",
+        bg: "#fdecef",
+      };
+    case "MEDIUM":
+      return {
+        color: "#fd7e14",
+        bg: "#fff3e0",
+      };
+    case "LOW":
+      return {
+        color: "#198754",
+        bg: "#e9f7ef",
+      };
+    default:
+      return {
+        color: "#6c757d",
+        bg: "#f3f5f7",
+      };
+  }
+}
+
+function statusLabel(status: string) {
+  switch (status) {
+    case "OPEN":
+      return "Открыт";
+    case "IN_PROGRESS":
+      return "В работе";
+    case "RESOLVED":
+      return "Решён";
+    default:
+      return status;
+  }
+}
+
+function statusMeta(status: string) {
+  switch (status) {
+    case "OPEN":
+      return {
+        color: "#dc3545",
+        bg: "#fdecef",
+      };
+    case "IN_PROGRESS":
+      return {
+        color: "#fd7e14",
+        bg: "#fff3e0",
+      };
+    case "RESOLVED":
+      return {
+        color: "#198754",
+        bg: "#e9f7ef",
+      };
+    default:
+      return {
+        color: "#6c757d",
+        bg: "#f3f5f7",
+      };
+  }
+}
+
+function formatWidgetDate(value: string) {
+  return new Date(value).toLocaleDateString("ru-RU");
+}
+
+function IncidentsWidget({
+  items,
+  onOpen,
+}: {
+  items: IncidentWidgetItem[] | null;
+  onOpen: () => void;
+}) {
+  return (
+    <div
+      className="card border-0 shadow-sm rounded-4 mt-3 incidents-widget"
+      style={{ background: "#fff", cursor: "pointer" }}
+      onClick={onOpen}
+    >
+      <div className="card-body p-4">
+        <div className="d-flex align-items-center justify-content-between mb-3">
+          <div className="d-flex align-items-center gap-2">
+            <div
+              className="d-flex align-items-center justify-content-center rounded-3"
+              style={{
+                width: 36,
+                height: 36,
+                background: "#fdecef",
+                color: "#dc3545",
+                fontSize: 16,
+              }}
+            >
+              <i className="fa fa-triangle-exclamation" />
+            </div>
+            <div>
+              <div className="fw-bold" style={{ fontSize: 15 }}>
+                Инциденты
+              </div>
+              <div className="text-muted" style={{ fontSize: 12 }}>
+                Последние конфликтные ситуации
+              </div>
+            </div>
+          </div>
+
+          <div
+            className="d-flex align-items-center justify-content-center rounded-circle incidents-widget-arrow"
+            style={{
+              width: 28,
+              height: 28,
+              background: "#f3f5f7",
+              color: "#5f6b73",
+              flexShrink: 0,
+            }}
+          >
+            <i className="fa fa-arrow-right" style={{ fontSize: 10 }} />
+          </div>
+        </div>
+
+        {items == null ? (
+          <div className="text-center py-3">
+            <div className="spinner-border spinner-border-sm text-secondary" />
+          </div>
+        ) : items.length === 0 ? (
+          <div
+            className="rounded-4 px-3 py-4 text-center"
+            style={{ background: "#f8fafb" }}
+          >
+            <div className="text-muted" style={{ fontSize: 13 }}>
+              Инцидентов пока нет
+            </div>
+          </div>
+        ) : (
+          <div className="d-flex flex-column gap-2">
+            {items.map((item) => {
+              const sev = severityMeta(item.severity);
+              const stat = statusMeta(item.status);
+
+              return (
+                <div
+                  key={item.id}
+                  className="rounded-4 px-3 py-3 incident-widget-row"
+                  style={{ background: "#f8fafb", border: "1px solid #eef1f4" }}
+                >
+                  <div className="d-flex justify-content-between align-items-start gap-2 mb-2">
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        className="fw-semibold text-truncate"
+                        style={{ fontSize: 13 }}
+                      >
+                        {item.title}
+                      </div>
+                      <div
+                        className="text-muted text-truncate"
+                        style={{ fontSize: 11 }}
+                      >
+                        {item.organization}
+                      </div>
+                    </div>
+
+                    <div
+                      className="rounded-pill px-2 py-1"
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: sev.color,
+                        background: sev.bg,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {severityLabel(item.severity)}
+                    </div>
+                  </div>
+
+                  <div className="d-flex justify-content-between align-items-center">
+                    <div
+                      className="rounded-pill px-2 py-1"
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: stat.color,
+                        background: stat.bg,
+                      }}
+                    >
+                      {statusLabel(item.status)}
+                    </div>
+
+                    <div className="text-muted" style={{ fontSize: 11 }}>
+                      {formatWidgetDate(item.incident_date)}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div
+          className="d-flex justify-content-between align-items-center mt-3 pt-2"
+          style={{ borderTop: "1px solid #eef1f4" }}
+        >
+          <span className="text-muted" style={{ fontSize: 12 }}>
+            Открыть полный список
+          </span>
+          <i className="fa fa-chevron-right text-muted" style={{ fontSize: 11 }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate();
   const [summary, setSummary] = useState<FinanceSummary | null>(null);
+  const [incidents, setIncidents] = useState<IncidentWidgetItem[] | null>(null);
 
   useEffect(() => {
     fetchFinanceSummary().then(setSummary).catch(() => null);
+    fetchIncidentsWidget().then(setIncidents).catch(() => setIncidents([]));
   }, []);
 
   return (
     <Layout>
       <div className="row g-4">
-
-        {/* ── Left: section cards ── */}
         <div className="col-xl-9 col-lg-8">
           <div className="row g-0">
+            <SectionHeader
+              title="Организация и МТБ"
+              subtitle="Основные сведения об образовательной организации"
+            />
+            <div className="col-12">
+              <div className="row">
+                <DashCard
+                  icon="fa-university"
+                  color="success"
+                  title="Организации"
+                  subtitle="Сведения по ОО"
+                  onClick={() => navigate("/organizations")}
+                />
+                <DashCard
+                  icon="fa-building"
+                  color="primary"
+                  title="Здания"
+                  subtitle="Материально-техническая база"
+                  onClick={() => navigate("/buildings")}
+                />
+              </div>
+            </div>
 
-            <SectionHeader title="Организация и МТБ" subtitle="Основные сведения об образовательной организации" />
-            <div className="col-12"><div className="row">
-              <DashCard icon="fa-university" color="success" title="Организации" subtitle="Сведения по ОО" onClick={() => navigate("/organizations")} />
-              <DashCard icon="fa-building" color="primary" title="Здания" subtitle="Материально-техническая база" onClick={() => navigate("/buildings")} />
-            </div></div>
+            <SectionHeader
+              title="Кадровый состав"
+              subtitle="Общие сведения и списки сотрудников"
+            />
+            <div className="col-12">
+              <div className="row">
+                <DashCard
+                  icon="fa-table"
+                  color="danger"
+                  title="Общие сведения"
+                  subtitle="Штатное расписание"
+                  onClick={() => navigate("/staff-info")}
+                />
+                <DashCard
+                  icon="fa-id-card"
+                  color="danger"
+                  title="Все сотрудники"
+                  subtitle="Полный список"
+                  onClick={() => navigate("/employees")}
+                />
+                <DashCard
+                  icon="fa-user-tie"
+                  color="danger"
+                  title="АУП"
+                  subtitle="Административно-управленческий"
+                  onClick={() => navigate("/employees?cat=ADM")}
+                />
+                <DashCard
+                  icon="fa-chalkboard-user"
+                  color="danger"
+                  title="Педагоги + УВП"
+                  subtitle="Педагогический персонал"
+                  onClick={() => navigate("/employees?cat=TEACH")}
+                />
+                <DashCard
+                  icon="fa-wrench"
+                  color="danger"
+                  title="МОП"
+                  subtitle="Младший обслуживающий"
+                  onClick={() => navigate("/employees?cat=TECH")}
+                />
+              </div>
+            </div>
 
-            <SectionHeader title="Кадровый состав" subtitle="Общие сведения и списки сотрудников" />
-            <div className="col-12"><div className="row">
-              <DashCard icon="fa-table" color="danger" title="Общие сведения" subtitle="Штатное расписание" onClick={() => navigate("/staff-info")} />
-              <DashCard icon="fa-id-card" color="danger" title="Все сотрудники" subtitle="Полный список" onClick={() => navigate("/employees")} />
-              <DashCard icon="fa-user-tie" color="danger" title="АУП" subtitle="Административно-управленческий" onClick={() => navigate("/employees?cat=ADM")} />
-              <DashCard icon="fa-chalkboard-user" color="danger" title="Педагоги + УВП" subtitle="Педагогический персонал" onClick={() => navigate("/employees?cat=TEACH")} />
-              <DashCard icon="fa-wrench" color="danger" title="МОП" subtitle="Младший обслуживающий" onClick={() => navigate("/employees?cat=TECH")} />
-            </div></div>
+            <SectionHeader
+              title="Контингент обучающихся"
+              subtitle="Численность, классы и параллели"
+            />
+            <div className="col-12">
+              <div className="row">
+                <DashCard
+                  icon="fa-users"
+                  color="teal"
+                  title="Контингент"
+                  subtitle="Общая численность"
+                  onClick={() => navigate("/contingent")}
+                />
+                <DashCard
+                  icon="fa-graduation-cap"
+                  color="teal"
+                  title="Классы и параллели"
+                  subtitle="Классы по параллелям"
+                  onClick={() => navigate("/contingent")}
+                />
+              </div>
+            </div>
 
-            <SectionHeader title="Контингент обучающихся" subtitle="Численность, классы и параллели" />
-            <div className="col-12"><div className="row">
-              <DashCard icon="fa-users" color="teal" title="Контингент" subtitle="Общая численность" onClick={() => navigate("/contingent")} />
-              <DashCard icon="fa-graduation-cap" color="teal" title="Классы и параллели" subtitle="Классы по параллелям" onClick={() => navigate("/contingent")} />
-            </div></div>
+            <SectionHeader
+              title="Образовательная деятельность"
+              subtitle="Урочная, внеурочная и доп. образование"
+            />
+            <div className="col-12">
+              <div className="row">
+                <DashCard
+                  icon="fa-book-open"
+                  color="purple"
+                  title="Образовательная деятельность"
+                  subtitle="Все виды деятельности"
+                  onClick={() => navigate("/education")}
+                />
+              </div>
+            </div>
 
-            <SectionHeader title="Образовательная деятельность" subtitle="Урочная, внеурочная и доп. образование" />
-            <div className="col-12"><div className="row">
-              <DashCard icon="fa-book-open" color="purple" title="Образовательная деятельность" subtitle="Все виды деятельности" onClick={() => navigate("/education")} />
-            </div></div>
-
-            <SectionHeader title="Финансовая деятельность" subtitle="Финансовые показатели, субсидии и контракты" />
-            <div className="col-12"><div className="row">
-              <DashCard icon="fa-ruble-sign" color="warning" title="Финансовые записи" subtitle="Расходы по разделам" onClick={() => navigate("/finance")} />
-              <DashCard icon="fa-handshake" color="warning" title="Субсидии" subtitle="Субсидии и финансирование" onClick={() => navigate("/finance")} />
-              <DashCard icon="fa-file-contract" color="warning" title="Контракты" subtitle="Заключённые договоры" onClick={() => navigate("/finance")} />
-            </div></div>
-
+            <SectionHeader
+              title="Финансовая деятельность"
+              subtitle="Финансовые показатели, субсидии и контракты"
+            />
+            <div className="col-12">
+              <div className="row">
+                <DashCard
+                  icon="fa-ruble-sign"
+                  color="warning"
+                  title="Финансовые записи"
+                  subtitle="Расходы по разделам"
+                  onClick={() => navigate("/finance")}
+                />
+                <DashCard
+                  icon="fa-handshake"
+                  color="warning"
+                  title="Субсидии"
+                  subtitle="Субсидии и финансирование"
+                  onClick={() => navigate("/finance")}
+                />
+                <DashCard
+                  icon="fa-file-contract"
+                  color="warning"
+                  title="Контракты"
+                  subtitle="Заключённые договоры"
+                  onClick={() => navigate("/finance")}
+                />
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* ── Right: widgets ── */}
         <div className="col-xl-3 col-lg-4">
           <div style={{ position: "sticky", top: 24 }}>
             <FinancePulse data={summary} />
+            <IncidentsWidget
+              items={incidents}
+              onOpen={() => navigate("/incidents")}
+            />
           </div>
         </div>
-
       </div>
 
       <style>{`
-        .dashboard-action-card { transition: transform 0.18s ease, box-shadow 0.18s ease; }
-        .dashboard-action-card:hover { transform: translateY(-3px); box-shadow: 0 0.7rem 1.4rem rgba(55,71,79,0.10) !important; }
-        .dashboard-action-card:hover .dashboard-arrow { background: #37474f; color: #fff !important; }
-        .dashboard-arrow { transition: all 0.18s ease; }
+        .dashboard-action-card {
+          transition: transform 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .dashboard-action-card:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 0.7rem 1.4rem rgba(55,71,79,0.10) !important;
+        }
+
+        .dashboard-action-card:hover .dashboard-arrow {
+          background: #37474f;
+          color: #fff !important;
+        }
+
+        .dashboard-arrow {
+          transition: all 0.18s ease;
+        }
+
+        .incidents-widget {
+          transition: transform 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .incidents-widget:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 0.7rem 1.4rem rgba(55,71,79,0.10) !important;
+        }
+
+        .incidents-widget-arrow {
+          transition: all 0.18s ease;
+        }
+
+        .incidents-widget:hover .incidents-widget-arrow {
+          background: #37474f;
+          color: #fff !important;
+        }
+
+        .incident-widget-row {
+          transition: transform 0.16s ease, box-shadow 0.16s ease;
+        }
+
+        .incidents-widget:hover .incident-widget-row {
+          box-shadow: 0 0.35rem 0.9rem rgba(55,71,79,0.05);
+        }
       `}</style>
     </Layout>
   );

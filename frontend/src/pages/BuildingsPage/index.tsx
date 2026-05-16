@@ -8,7 +8,6 @@ import {
 import Layout from "../../components/Layout";
 import { useAuth } from "../../contexts/AuthContext";
 
-
 export default function BuildingsPage() {
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,13 +20,16 @@ export default function BuildingsPage() {
 
   const navigate = useNavigate();
   const { user } = useAuth();
-  const canEdit = user?.role_code !== "MINOBR";
+
+  const canEdit =
+    user?.role_code === "ADMIN" || user?.role_code === "DIRECTOR";
 
   const q = search.toLowerCase();
-  const filteredBuildings = buildings.filter((b) =>
-    (b.name ?? "").toLowerCase().includes(q) ||
-    (b.address ?? "").toLowerCase().includes(q) ||
-    b.organization.toLowerCase().includes(q)
+  const filteredBuildings = buildings.filter(
+    (b) =>
+      (b.name ?? "").toLowerCase().includes(q) ||
+      (b.address ?? "").toLowerCase().includes(q) ||
+      b.organization.toLowerCase().includes(q),
   );
 
   useEffect(() => {
@@ -41,6 +43,8 @@ export default function BuildingsPage() {
   }, [navigate]);
 
   const openEdit = (b: Building) => {
+    if (!canEdit) return;
+
     setEditing(b);
     setFormName(b.name ?? "");
     setFormAddress(b.address ?? "");
@@ -53,7 +57,8 @@ export default function BuildingsPage() {
   };
 
   const saveEdit = async () => {
-    if (!editing) return;
+    if (!editing || !canEdit) return;
+
     setSaving(true);
     try {
       const updated = await updateBuilding(editing.id, {
@@ -77,7 +82,6 @@ export default function BuildingsPage() {
   return (
     <Layout>
       <div className="row g-3">
-        {/* Main table */}
         <div className="col-lg-9">
           <div className="d-flex align-items-center gap-3 mb-3">
             <button
@@ -108,69 +112,74 @@ export default function BuildingsPage() {
               <div className="spinner-border text-secondary" />
             </div>
           )}
+
           {error && <div className="alert alert-danger">{error}</div>}
 
           {!loading && !error && (
             <>
               <div className="text-muted small mb-2">
-                <span className="fw-semibold">{filteredBuildings.length}</span> — всего
+                <span className="fw-semibold">{filteredBuildings.length}</span>{" "}
+                — всего
               </div>
+
               <div className="card shadow-sm">
-              <div className="table-responsive">
-                <table className="table table-bordered mb-0">
-                  <thead style={{ background: "#efefef" }}>
-                    <tr>
-                      <th style={{ width: 50 }}>ID</th>
-                      <th>Название</th>
-                      <th>Адрес</th>
-                      <th>Дата создания</th>
-                      {canEdit && (
-                        <th style={{ width: 60 }} className="text-center">
-                          <i className="fa fa-cog" />
-                        </th>
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredBuildings.length === 0 ? (
+                <div className="table-responsive">
+                  <table className="table table-bordered mb-0">
+                    <thead style={{ background: "#efefef" }}>
                       <tr>
-                        <td colSpan={canEdit ? 5 : 4} className="text-center text-muted py-4">
-                          Данные отсутствуют
-                        </td>
+                        <th style={{ width: 50 }}>ID</th>
+                        <th>Название</th>
+                        <th>Адрес</th>
+                        <th>Дата создания</th>
+                        {canEdit && (
+                          <th style={{ width: 60 }} className="text-center">
+                            <i className="fa fa-cog" />
+                          </th>
+                        )}
                       </tr>
-                    ) : (
-                      filteredBuildings.map((b) => (
-                        <tr key={b.id}>
-                          <td className="text-muted small">{b.id}</td>
-                          <td>
-                            <strong>{b.name ?? "—"}</strong>
+                    </thead>
+                    <tbody>
+                      {filteredBuildings.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={canEdit ? 5 : 4}
+                            className="text-center text-muted py-4"
+                          >
+                            Данные отсутствуют
                           </td>
-                          <td>{b.address ?? "—"}</td>
-                          <td>{formatDate(b.created_at)}</td>
-                          {canEdit && (
-                            <td className="text-center">
-                              <button
-                                className="btn btn-sm btn-outline-secondary py-0 px-2"
-                                title="Редактировать"
-                                onClick={() => openEdit(b)}
-                              >
-                                <i className="fa fa-pencil" />
-                              </button>
-                            </td>
-                          )}
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                      ) : (
+                        filteredBuildings.map((b) => (
+                          <tr key={b.id}>
+                            <td className="text-muted small">{b.id}</td>
+                            <td>
+                              <strong>{b.name ?? "—"}</strong>
+                            </td>
+                            <td>{b.address ?? "—"}</td>
+                            <td>{formatDate(b.created_at)}</td>
+                            {canEdit && (
+                              <td className="text-center">
+                                <button
+                                  className="btn btn-sm btn-outline-secondary py-0 px-2"
+                                  title="Редактировать"
+                                  onClick={() => openEdit(b)}
+                                >
+                                  <i className="fa fa-pencil" />
+                                </button>
+                              </td>
+                            )}
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
             </>
           )}
         </div>
       </div>
 
-      {/* Edit modal */}
       {canEdit && editing && (
         <div
           className="modal show d-block"
@@ -188,13 +197,16 @@ export default function BuildingsPage() {
                   Редактировать здание
                 </h6>
                 <button
+                  type="button"
                   className="btn-close btn-close-white"
                   onClick={closeEdit}
                 />
               </div>
               <div className="modal-body">
                 <div className="mb-3">
-                  <label className="form-label small fw-semibold">Название</label>
+                  <label className="form-label small fw-semibold">
+                    Название
+                  </label>
                   <input
                     type="text"
                     className="form-control"

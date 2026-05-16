@@ -2,9 +2,15 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-
+from datetime import date
 from app.api.database.db import get_connection
-from app.api.security import _RESTRICTED_ROLES, get_current_user, get_user_org_ids, require_write
+from app.api.security import get_current_user
+from app.api.permissions import (
+    get_user_org_ids,
+    is_org_scoped_user,
+    require_org_write_access,
+)
+
 
 router = APIRouter(prefix="/data", tags=["data"])
 
@@ -27,19 +33,30 @@ class BuildingUpdate(BaseModel):
     name: Optional[str] = None
     address: Optional[str] = None
 
+class IncidentCreate(BaseModel):
+    organization_id: int
+    title: str
+    description: Optional[str] = None
+    status: str = "OPEN"
+    severity: str = "MEDIUM"
+    incident_date: Optional[date] = None
+
+
+class IncidentUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    severity: Optional[str] = None
+    incident_date: Optional[date] = None
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 async def _org_ids_filter(current_user: dict, conn) -> list[int] | None:
-    """Returns list of allowed org IDs for restricted roles, None means all."""
-    if current_user.get("role_code") in _RESTRICTED_ROLES:
+    if is_org_scoped_user(current_user):
         return await get_user_org_ids(current_user["id"], conn)
     return None
 
-
-def _check_org_access(org_id: int, allowed: list[int] | None) -> None:
-    if allowed is not None and org_id not in allowed:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
 
 # ── Read endpoints ────────────────────────────────────────────────────────────
@@ -59,11 +76,31 @@ async def get_profile(
             u.email,
             u.phone,
             r.name AS role_name,
-            o.name AS organization_name
+            COALESCE(org_from_membership.name, org_from_legacy.name) AS organization_name
         FROM users u
         LEFT JOIN roles r ON r.id = u.role_id
-        LEFT JOIN organization_users ou ON ou.user_id = u.id
-        LEFT JOIN organizations o ON o.id = ou.organization_id
+
+        LEFT JOIN LATERAL (
+            SELECT om.organization_id
+            FROM organization_memberships om
+            WHERE om.user_id = u.id
+              AND om.is_active = TRUE
+            ORDER BY om.organization_id
+            LIMIT 1
+        ) membership_org ON TRUE
+        LEFT JOIN organizations org_from_membership
+            ON org_from_membership.id = membership_org.organization_id
+
+        LEFT JOIN LATERAL (
+            SELECT ou.organization_id
+            FROM organization_users ou
+            WHERE ou.user_id = u.id
+            ORDER BY ou.organization_id
+            LIMIT 1
+        ) legacy_org ON TRUE
+        LEFT JOIN organizations org_from_legacy
+            ON org_from_legacy.id = legacy_org.organization_id
+
         WHERE u.id = $1
         LIMIT 1
         """,
@@ -351,6 +388,112 @@ async def list_education(
     )
     return [dict(r) for r in rows]
 
+@router.get("/incidents")
+async def list_incidents(
+    current_user=Depends(get_current_user),
+    conn=Depends(get_connection),
+):
+    allowed = await _org_ids_filter(current_user, conn)
+    rows = await conn.fetch(
+        """
+        SELECT
+            i.id,
+            i.organization_id,
+            o.name AS organization,
+            i.title,
+            i.description,
+            i.status,
+            i.severity,
+            i.incident_date,
+            i.created_by_user_id,
+            i.created_at,
+            i.updated_at
+        FROM incidents i
+        JOIN organizations o ON o.id = i.organization_id
+        WHERE ($1::bigint[] IS NULL OR i.organization_id = ANY($1))
+        ORDER BY i.incident_date DESC, i.id DESC
+        """,
+        allowed,
+    )
+    return [dict(r) for r in rows]
+
+@router.get("/incidents/widget")
+async def incidents_widget(
+    current_user=Depends(get_current_user),
+    conn=Depends(get_connection),
+):
+    allowed = await _org_ids_filter(current_user, conn)
+    rows = await conn.fetch(
+        """
+        SELECT
+            i.id,
+            i.organization_id,
+            o.name AS organization,
+            i.title,
+            i.status,
+            i.severity,
+            i.incident_date
+        FROM incidents i
+        JOIN organizations o ON o.id = i.organization_id
+        WHERE ($1::bigint[] IS NULL OR i.organization_id = ANY($1))
+        ORDER BY i.incident_date DESC, i.id DESC
+        LIMIT 5
+        """,
+        allowed,
+    )
+    return [dict(r) for r in rows]
+
+@router.post("/incidents")
+async def create_incident(
+    payload: IncidentCreate,
+    current_user=Depends(get_current_user),
+    conn=Depends(get_connection),
+):
+    await require_org_write_access(
+        current_user,
+        payload.organization_id,
+        conn,
+        allowed_org_roles=("DIRECTOR", "STAFF"),
+    )
+
+    row = await conn.fetchrow(
+        """
+        INSERT INTO incidents (
+            organization_id,
+            title,
+            description,
+            status,
+            severity,
+            incident_date,
+            created_by_user_id
+        )
+        VALUES (
+            $1, $2, $3, $4, $5,
+            COALESCE($6::date, CURRENT_DATE),
+            $7
+        )
+        RETURNING
+            id,
+            organization_id,
+            title,
+            description,
+            status,
+            severity,
+            incident_date,
+            created_by_user_id,
+            created_at,
+            updated_at
+        """,
+        payload.organization_id,
+        payload.title,
+        payload.description,
+        payload.status,
+        payload.severity,
+        payload.incident_date,
+        current_user["id"],
+    )
+    return dict(row)
+
 
 # ── Edit endpoints ────────────────────────────────────────────────────────────
 
@@ -361,38 +504,61 @@ async def update_employee(
     current_user=Depends(get_current_user),
     conn=Depends(get_connection),
 ):
-    require_write(current_user)
-
     existing = await conn.fetchrow(
-        "SELECT id, organization_id FROM employees WHERE id = $1", employee_id
+        "SELECT id, organization_id FROM employees WHERE id = $1",
+        employee_id,
     )
     if not existing:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Employee not found",
+        )
 
-    allowed = await _org_ids_filter(current_user, conn)
-    _check_org_access(existing["organization_id"], allowed)
+    await require_org_write_access(
+        current_user,
+        existing["organization_id"],
+        conn,
+        allowed_org_roles=("DIRECTOR", "STAFF"),
+    )
 
     if payload.fio is not None:
         await conn.execute(
             "UPDATE employees SET fio = $1 WHERE id = $2",
-            payload.fio, employee_id,
+            payload.fio,
+            employee_id,
         )
 
     if payload.position_id is not None:
         await conn.execute(
-            "DELETE FROM employee_positions WHERE employee_id = $1", employee_id
+            "DELETE FROM employee_positions WHERE employee_id = $1",
+            employee_id,
         )
         await conn.execute(
-            "INSERT INTO employee_positions (employee_id, position_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-            employee_id, payload.position_id,
+            """
+            INSERT INTO employee_positions (employee_id, position_id)
+            VALUES ($1, $2)
+            ON CONFLICT DO NOTHING
+            """,
+            employee_id,
+            payload.position_id,
         )
 
     row = await conn.fetchrow(
         """
-        SELECT e.id, e.fio,
-               p.id AS position_id, p.name AS position,
-               c.name AS category, c.code AS category_code,
-               o.name AS organization
+        SELECT
+            e.id,
+            e.organization_id,
+            e.last_name,
+            e.first_name,
+            e.middle_name,
+            e.phone,
+            e.fio,
+            p.id AS position_id,
+            p.name AS position,
+            c.id AS category_id,
+            c.name AS category,
+            c.code AS category_code,
+            o.name AS organization
         FROM employees e
         JOIN organizations o ON o.id = e.organization_id
         LEFT JOIN employee_positions ep ON ep.employee_id = e.id
@@ -412,36 +578,47 @@ async def update_organization(
     current_user=Depends(get_current_user),
     conn=Depends(get_connection),
 ):
-    require_write(current_user)
-
     existing = await conn.fetchrow(
-        "SELECT id FROM organizations WHERE id = $1", org_id
+        "SELECT id FROM organizations WHERE id = $1",
+        org_id,
     )
     if not existing:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Organization not found",
+        )
 
-    allowed = await _org_ids_filter(current_user, conn)
-    _check_org_access(org_id, allowed)
+    await require_org_write_access(
+        current_user,
+        org_id,
+        conn,
+        allowed_org_roles=("DIRECTOR",),
+    )
 
     fields = {k: v for k, v in payload.model_dump().items() if v is not None}
     if fields:
         set_clause = ", ".join(f"{k} = ${i+2}" for i, k in enumerate(fields))
         await conn.execute(
             f"UPDATE organizations SET {set_clause} WHERE id = $1",
-            org_id, *fields.values(),
+            org_id,
+            *fields.values(),
         )
 
     row = await conn.fetchrow(
         """
         SELECT o.id, o.name, o.director_name, o.governance_body, o.founder, b.address
         FROM organizations o
-        LEFT JOIN LATERAL (SELECT address FROM buildings WHERE organization_id = o.id LIMIT 1) b ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT address
+            FROM buildings
+            WHERE organization_id = o.id
+            LIMIT 1
+        ) b ON TRUE
         WHERE o.id = $1
         """,
         org_id,
     )
     return dict(row)
-
 
 @router.put("/buildings/{building_id}")
 async def update_building(
@@ -450,23 +627,30 @@ async def update_building(
     current_user=Depends(get_current_user),
     conn=Depends(get_connection),
 ):
-    require_write(current_user)
-
     existing = await conn.fetchrow(
-        "SELECT id, organization_id FROM buildings WHERE id = $1", building_id
+        "SELECT id, organization_id FROM buildings WHERE id = $1",
+        building_id,
     )
     if not existing:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Building not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Building not found",
+        )
 
-    allowed = await _org_ids_filter(current_user, conn)
-    _check_org_access(existing["organization_id"], allowed)
+    await require_org_write_access(
+        current_user,
+        existing["organization_id"],
+        conn,
+        allowed_org_roles=("DIRECTOR",),
+    )
 
     fields = {k: v for k, v in payload.model_dump().items() if v is not None}
     if fields:
         set_clause = ", ".join(f"{k} = ${i+2}" for i, k in enumerate(fields))
         await conn.execute(
             f"UPDATE buildings SET {set_clause} WHERE id = $1",
-            building_id, *fields.values(),
+            building_id,
+            *fields.values(),
         )
 
     row = await conn.fetchrow(
@@ -479,3 +663,105 @@ async def update_building(
         building_id,
     )
     return dict(row)
+
+
+@router.put("/incidents/{incident_id}")
+async def update_incident(
+    incident_id: int,
+    payload: IncidentUpdate,
+    current_user=Depends(get_current_user),
+    conn=Depends(get_connection),
+):
+    existing = await conn.fetchrow(
+        "SELECT id, organization_id FROM incidents WHERE id = $1",
+        incident_id,
+    )
+    if not existing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Incident not found",
+        )
+
+    await require_org_write_access(
+        current_user,
+        existing["organization_id"],
+        conn,
+        allowed_org_roles=("DIRECTOR", "STAFF"),
+    )
+
+    fields = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if fields:
+        set_parts = []
+        values = [incident_id]
+        idx = 2
+
+        for key, value in fields.items():
+            if key == "incident_date":
+                set_parts.append(f"{key} = ${idx}::date")
+            else:
+                set_parts.append(f"{key} = ${idx}")
+            values.append(value)
+            idx += 1
+
+        set_parts.append("updated_at = NOW()")
+        set_clause = ", ".join(set_parts)
+
+        await conn.execute(
+            f"UPDATE incidents SET {set_clause} WHERE id = $1",
+            *values,
+        )
+
+    row = await conn.fetchrow(
+        """
+        SELECT
+            i.id,
+            i.organization_id,
+            o.name AS organization,
+            i.title,
+            i.description,
+            i.status,
+            i.severity,
+            i.incident_date,
+            i.created_by_user_id,
+            i.created_at,
+            i.updated_at
+        FROM incidents i
+        JOIN organizations o ON o.id = i.organization_id
+        WHERE i.id = $1
+        """,
+        incident_id,
+    )
+    return dict(row)
+
+
+
+@router.delete("/incidents/{incident_id}")
+async def delete_incident(
+    incident_id: int,
+    current_user=Depends(get_current_user),
+    conn=Depends(get_connection),
+):
+    existing = await conn.fetchrow(
+        "SELECT id, organization_id FROM incidents WHERE id = $1",
+        incident_id,
+    )
+    if not existing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Incident not found",
+        )
+
+    await require_org_write_access(
+        current_user,
+        existing["organization_id"],
+        conn,
+        allowed_org_roles=("DIRECTOR", "STAFF"),
+    )
+
+    await conn.execute(
+        "DELETE FROM incidents WHERE id = $1",
+        incident_id,
+    )
+
+    return {"ok": True}
+    

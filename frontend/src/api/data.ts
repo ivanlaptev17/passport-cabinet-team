@@ -62,6 +62,47 @@ export type Building = {
   organization: string;
 };
 
+export type Incident = {
+  id: number;
+  organization_id: number;
+  organization: string;
+  title: string;
+  description: string | null;
+  status: string;
+  severity: string;
+  incident_date: string;
+  created_by_user_id: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type IncidentWidgetItem = {
+  id: number;
+  organization_id: number;
+  organization: string;
+  title: string;
+  status: string;
+  severity: string;
+  incident_date: string;
+};
+
+export type IncidentCreate = {
+  organization_id: number;
+  title: string;
+  description?: string;
+  status?: string;
+  severity?: string;
+  incident_date?: string;
+};
+
+export type IncidentUpdate = {
+  title?: string;
+  description?: string;
+  status?: string;
+  severity?: string;
+  incident_date?: string;
+};
+
 // ── Fetchers ──────────────────────────────────────────────────────────────────
 
 export const fetchProfile = () => apiFetch<Profile>("/data/profile");
@@ -183,4 +224,28 @@ export const updateBuilding = (
   apiFetch<Building>(`/data/buildings/${id}`, {
     method: "PUT",
     body: JSON.stringify(body),
+  });
+
+
+export const fetchIncidents = () =>
+  apiFetch<Incident[]>("/data/incidents");
+
+export const fetchIncidentsWidget = () =>
+  apiFetch<IncidentWidgetItem[]>("/data/incidents/widget");
+
+export const createIncident = (body: IncidentCreate) =>
+  apiFetch<Incident>("/data/incidents", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const updateIncident = (id: number, body: IncidentUpdate) =>
+  apiFetch<Incident>(`/data/incidents/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+
+export const deleteIncident = (id: number) =>
+  apiFetch<{ ok: boolean }>(`/data/incidents/${id}`, {
+    method: "DELETE",
   });
