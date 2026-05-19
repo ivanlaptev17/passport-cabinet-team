@@ -4,8 +4,10 @@ import Layout from "../../components/Layout";
 import {
   fetchFinanceSummary,
   fetchIncidentsWidget,
+  fetchUpcomingEvents,
   type FinanceSummary,
   type IncidentWidgetItem,
+  type CalendarEvent,
 } from "../../api/data";
 
 type CardProps = {
@@ -469,14 +471,75 @@ function IncidentsWidget({
   );
 }
 
+function CalendarWidget({ events, onOpen }: { events: CalendarEvent[] | null; onOpen: () => void }) {
+  const fmtDT = (s: string) => {
+    const d = new Date(s);
+    return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" }) +
+      " " + d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  };
+
+  const diffLabel = (s: string) => {
+    const diff = Math.round((new Date(s).getTime() - Date.now()) / 86400000);
+    if (diff === 0) return "сегодня";
+    if (diff === 1) return "завтра";
+    return `через ${diff} дн.`;
+  };
+
+  return (
+    <div className="card border-0 shadow-sm rounded-4 mt-3" style={{ background: "#fff" }}>
+      <div className="card-body p-4">
+        <div className="d-flex align-items-center justify-content-between mb-3">
+          <div className="d-flex align-items-center gap-2">
+            <div className="d-flex align-items-center justify-content-center rounded-3"
+              style={{ width: 36, height: 36, background: "#eaf2ff", color: "#0d6efd", fontSize: 16 }}>
+              <i className="fa fa-calendar" />
+            </div>
+            <div>
+              <div className="fw-bold" style={{ fontSize: 15 }}>Мероприятия</div>
+              <div className="text-muted" style={{ fontSize: 12 }}>Ближайшие события</div>
+            </div>
+          </div>
+          <button className="btn btn-sm btn-outline-secondary py-0 px-2" onClick={onOpen} style={{ fontSize: 12 }}>
+            Все
+          </button>
+        </div>
+
+        {events == null ? (
+          <div className="text-center py-2"><div className="spinner-border spinner-border-sm text-secondary" /></div>
+        ) : events.length === 0 ? (
+          <div className="text-muted text-center py-2" style={{ fontSize: 13 }}>Нет ближайших мероприятий</div>
+        ) : (
+          <div className="d-flex flex-column gap-2">
+            {events.map((e) => (
+              <div key={e.id} className="d-flex align-items-start gap-2 py-2 px-3 rounded-3" style={{ background: "#f8fafb" }}>
+                <div style={{ flexShrink: 0, marginTop: 2 }}>
+                  <span className="badge rounded-pill" style={{ background: "#eaf2ff", color: "#0d6efd", fontSize: 10 }}>
+                    {diffLabel(e.starts_at)}
+                  </span>
+                </div>
+                <div className="flex-grow-1 overflow-hidden">
+                  <div className="fw-semibold text-truncate" style={{ fontSize: 13 }}>{e.title}</div>
+                  <div className="text-muted" style={{ fontSize: 11 }}>{fmtDT(e.starts_at)}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate();
   const [summary, setSummary] = useState<FinanceSummary | null>(null);
   const [incidents, setIncidents] = useState<IncidentWidgetItem[] | null>(null);
+  const [upcomingEvents, setUpcomingEvents] = useState<CalendarEvent[] | null>(null);
 
   useEffect(() => {
     fetchFinanceSummary().then(setSummary).catch(() => null);
     fetchIncidentsWidget().then(setIncidents).catch(() => setIncidents([]));
+    fetchUpcomingEvents(3).then(setUpcomingEvents).catch(() => setUpcomingEvents([]));
   }, []);
 
   return (
@@ -625,6 +688,7 @@ export default function DashboardPage() {
         <div className="col-xl-3 col-lg-4">
           <div style={{ position: "sticky", top: 24 }}>
             <FinancePulse data={summary} />
+            <CalendarWidget events={upcomingEvents} onOpen={() => navigate("/calendar")} />
             <IncidentsWidget
               items={incidents}
               onOpen={() => navigate("/incidents")}

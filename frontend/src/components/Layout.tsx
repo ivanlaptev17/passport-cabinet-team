@@ -45,6 +45,7 @@ export default function Layout({ children }: Props) {
   };
 
   const isHomeActive = pathname === "/dashboard";
+  const isCalendarActive = pathname === "/calendar";
 
   const isDataActive =
     pathname.startsWith("/organizations") ||
@@ -87,9 +88,9 @@ export default function Layout({ children }: Props) {
         }}
       >
         <div className="container-fluid px-4 py-2">
-          <span className="navbar-brand d-flex align-items-center mb-0">
+          <Link to="/dashboard" className="navbar-brand d-flex align-items-center mb-0" style={{ textDecoration: "none" }}>
             <img src="/logo.png" alt="ИЦТО" style={{ height: 52, objectFit: "contain" }} />
-          </span>
+          </Link>
 
           <ul className="navbar-nav flex-row gap-2 me-auto ms-4 align-items-center">
             <li className="nav-item">
@@ -101,6 +102,18 @@ export default function Layout({ children }: Props) {
               >
                 <i className="fa fa-house me-2" />
                 Главная
+              </Link>
+            </li>
+
+            <li className="nav-item">
+              <Link
+                to="/calendar"
+                className={`nav-link px-3 py-2 rounded-pill ${
+                  isCalendarActive ? "layout-nav-active" : "layout-nav-default"
+                }`}
+              >
+                <i className="fa fa-calendar me-2" />
+                Календарь
               </Link>
             </li>
 

@@ -101,8 +101,8 @@ export default function IncidentsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  const canManage =
-    user?.role_code === "DIRECTOR" || user?.role_code === "SCHOOL_STAFF";
+    const canManage = 
+      user?.role_code === "DIRECTOR" || user?.role_code === "SCHOOL_STAFF";
 
   useEffect(() => {
     Promise.all([fetchIncidents(), fetchOrganizations()])

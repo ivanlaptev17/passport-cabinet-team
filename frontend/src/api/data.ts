@@ -249,3 +249,60 @@ export const deleteIncident = (id: number) =>
   apiFetch<{ ok: boolean }>(`/data/incidents/${id}`, {
     method: "DELETE",
   });
+// ── Events / Calendar ─────────────────────────────────────────────────────────
+
+export type EventParticipant = {
+  id: number;
+  last_name: string | null;
+  first_name: string | null;
+};
+
+export type CalendarEvent = {
+  id: number;
+  organization_id: number;
+  organization: string;
+  title: string;
+  starts_at: string;
+  ends_at: string | null;
+  description: string | null;
+  created_by: number | null;
+  created_at: string;
+  participants: EventParticipant[];
+};
+
+export type OrgUser = {
+  id: number;
+  last_name: string | null;
+  first_name: string | null;
+  middle_name: string | null;
+  email: string;
+};
+
+export type EventCreate = {
+  organization_id: number;
+  title: string;
+  starts_at: string;
+  ends_at?: string;
+  description?: string;
+  participant_ids?: number[];
+};
+
+export type EventUpdate = Partial<EventCreate>;
+
+export const fetchEvents = (month?: string) =>
+  apiFetch<CalendarEvent[]>(`/data/events${month ? `?month=${month}` : ""}`);
+
+export const fetchUpcomingEvents = (limit = 3) =>
+  apiFetch<CalendarEvent[]>(`/data/events/upcoming?limit=${limit}`);
+
+export const fetchOrgUsers = () =>
+  apiFetch<OrgUser[]>("/data/events/org-users");
+
+export const createEvent = (body: EventCreate) =>
+  apiFetch<CalendarEvent>("/data/events", { method: "POST", body: JSON.stringify(body) });
+
+export const updateEvent = (id: number, body: EventUpdate) =>
+  apiFetch<CalendarEvent>(`/data/events/${id}`, { method: "PUT", body: JSON.stringify(body) });
+
+export const deleteEvent = (id: number) =>
+  apiFetch<{ ok: boolean }>(`/data/events/${id}`, { method: "DELETE" });

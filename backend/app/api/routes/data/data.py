@@ -1,8 +1,8 @@
-from typing import Optional
+from typing import Optional, List
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from datetime import date
 from app.api.database.db import get_connection
 from app.api.security import get_current_user
 from app.api.permissions import (
@@ -765,3 +765,186 @@ async def delete_incident(
 
     return {"ok": True}
     
+
+
+# ── Events / Calendar ─────────────────────────────────────────────────────────
+
+class EventCreate(BaseModel):
+    organization_id: int
+    title: str
+    starts_at: datetime
+    ends_at: Optional[datetime] = None
+    description: Optional[str] = None
+    participant_ids: List[int] = []
+
+class EventUpdate(BaseModel):
+    title: Optional[str] = None
+    starts_at: Optional[datetime] = None
+    ends_at: Optional[datetime] = None
+    description: Optional[str] = None
+    participant_ids: Optional[List[int]] = None
+
+_EVENT_SELECT = """
+    SELECT
+        e.id, e.organization_id, o.name AS organization,
+        e.title, e.starts_at, e.ends_at, e.description,
+        e.created_by, e.created_at,
+        COALESCE(
+            jsonb_agg(
+                jsonb_build_object('id', u.id, 'last_name', u.last_name, 'first_name', u.first_name)
+            ) FILTER (WHERE u.id IS NOT NULL),
+            '[]'::jsonb
+        ) AS participants
+    FROM events e
+    JOIN organizations o ON o.id = e.organization_id
+    LEFT JOIN event_participants ep ON ep.event_id = e.id
+    LEFT JOIN users u ON u.id = ep.user_id
+"""
+
+@router.get("/events")
+async def list_events(
+    month: Optional[str] = Query(None, description="YYYY-MM"),
+    current_user=Depends(get_current_user),
+    conn=Depends(get_connection),
+):
+    org_ids = await get_user_org_ids(current_user["id"], conn) if is_org_scoped_user(current_user) else None
+
+    where = "WHERE ($1::bigint[] IS NULL OR e.organization_id = ANY($1))"
+    params: list = [org_ids]
+
+    if month:
+        try:
+            d = datetime.strptime(month, "%Y-%m")
+            next_m = datetime(d.year + 1, 1, 1) if d.month == 12 else datetime(d.year, d.month + 1, 1)
+            where += " AND e.starts_at >= $2 AND e.starts_at < $3"
+            params += [d, next_m]
+        except Exception:
+            pass
+
+    rows = await conn.fetch(
+        f"{_EVENT_SELECT} {where} GROUP BY e.id, o.name ORDER BY e.starts_at",
+        *params,
+    )
+    return [dict(r) for r in rows]
+
+
+@router.get("/events/upcoming")
+async def upcoming_events(
+    limit: int = Query(3, ge=1, le=10),
+    current_user=Depends(get_current_user),
+    conn=Depends(get_connection),
+):
+    org_ids = await get_user_org_ids(current_user["id"], conn) if is_org_scoped_user(current_user) else None
+    rows = await conn.fetch(
+        f"""
+        {_EVENT_SELECT}
+        WHERE e.starts_at >= NOW()
+          AND ($1::bigint[] IS NULL OR e.organization_id = ANY($1))
+        GROUP BY e.id, o.name
+        ORDER BY e.starts_at
+        LIMIT $2
+        """,
+        org_ids, limit,
+    )
+    return [dict(r) for r in rows]
+
+
+@router.get("/events/org-users")
+async def org_users_for_events(
+    current_user=Depends(get_current_user),
+    conn=Depends(get_connection),
+):
+    """Users in same organizations as current user — for participant picker."""
+    org_ids = await get_user_org_ids(current_user["id"], conn)
+    if not org_ids:
+        return []
+    rows = await conn.fetch(
+        """
+        SELECT DISTINCT u.id, u.last_name, u.first_name, u.middle_name, u.email
+        FROM organization_users ou
+        JOIN users u ON u.id = ou.user_id
+        WHERE ou.organization_id = ANY($1)
+          AND u.is_active = TRUE
+        ORDER BY u.last_name, u.first_name
+        """,
+        org_ids,
+    )
+    return [dict(r) for r in rows]
+
+
+@router.post("/events", status_code=201)
+async def create_event(
+    payload: EventCreate,
+    current_user=Depends(get_current_user),
+    conn=Depends(get_connection),
+):
+    await require_org_write_access(current_user, payload.organization_id, conn)
+
+    event = await conn.fetchrow(
+        """
+        INSERT INTO events (organization_id, title, starts_at, ends_at, description, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id
+        """,
+        payload.organization_id, payload.title, payload.starts_at,
+        payload.ends_at, payload.description, current_user["id"],
+    )
+    eid = event["id"]
+
+    if payload.participant_ids:
+        await conn.executemany(
+            "INSERT INTO event_participants (event_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            [(eid, uid) for uid in payload.participant_ids],
+        )
+
+    row = await conn.fetchrow(
+        f"{_EVENT_SELECT} WHERE e.id = $1 GROUP BY e.id, o.name", eid
+    )
+    return dict(row)
+
+
+@router.put("/events/{event_id}")
+async def update_event(
+    event_id: int,
+    payload: EventUpdate,
+    current_user=Depends(get_current_user),
+    conn=Depends(get_connection),
+):
+    existing = await conn.fetchrow("SELECT id, organization_id FROM events WHERE id = $1", event_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    await require_org_write_access(current_user, existing["organization_id"], conn)
+
+    fields = {k: v for k, v in payload.model_dump(exclude={"participant_ids"}).items() if v is not None}
+    if fields:
+        set_clause = ", ".join(f"{k} = ${i+2}" for i, k in enumerate(fields))
+        await conn.execute(f"UPDATE events SET {set_clause} WHERE id = $1", event_id, *fields.values())
+
+    if payload.participant_ids is not None:
+        await conn.execute("DELETE FROM event_participants WHERE event_id = $1", event_id)
+        if payload.participant_ids:
+            await conn.executemany(
+                "INSERT INTO event_participants (event_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                [(event_id, uid) for uid in payload.participant_ids],
+            )
+
+    row = await conn.fetchrow(
+        f"{_EVENT_SELECT} WHERE e.id = $1 GROUP BY e.id, o.name", event_id
+    )
+    return dict(row)
+
+
+@router.delete("/events/{event_id}")
+async def delete_event(
+    event_id: int,
+    current_user=Depends(get_current_user),
+    conn=Depends(get_connection),
+):
+    existing = await conn.fetchrow("SELECT id, organization_id FROM events WHERE id = $1", event_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    await require_org_write_access(current_user, existing["organization_id"], conn)
+    await conn.execute("DELETE FROM events WHERE id = $1", event_id)
+    return {"ok": True}
