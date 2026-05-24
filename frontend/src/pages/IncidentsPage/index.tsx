@@ -101,8 +101,8 @@ export default function IncidentsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-    const canManage = 
-      user?.role_code === "DIRECTOR" || user?.role_code === "SCHOOL_STAFF";
+  const canManage = user?.role_code !== "MINOBR";
+  const canDelete = user?.role_code === "DIRECTOR" || user?.role_code === "ADMIN";
 
   useEffect(() => {
     Promise.all([fetchIncidents(), fetchOrganizations()])
@@ -353,13 +353,15 @@ export default function IncidentsPage() {
                                   >
                                     <i className="fa fa-pencil" />
                                   </button>
-                                  <button
-                                    className="btn btn-sm btn-outline-danger py-0 px-2"
-                                    title="Удалить"
-                                    onClick={() => void removeIncident(incident)}
-                                  >
-                                    <i className="fa fa-trash" />
-                                  </button>
+                                  {canDelete && (
+                                    <button
+                                      className="btn btn-sm btn-outline-danger py-0 px-2"
+                                      title="Удалить"
+                                      onClick={() => void removeIncident(incident)}
+                                    >
+                                      <i className="fa fa-trash" />
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             )}

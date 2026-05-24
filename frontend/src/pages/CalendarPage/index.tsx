@@ -1,8 +1,8 @@
 import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  fetchEvents, fetchOrgUsers, createEvent, updateEvent, deleteEvent,
-  type CalendarEvent, type OrgUser, type EventCreate,
+  fetchEvents, fetchOrgUsers, fetchOrganizations, createEvent, updateEvent, deleteEvent,
+  type CalendarEvent, type OrgUser, type EventCreate, type Organization,
 } from "../../api/data";
 import { useAuth } from "../../contexts/AuthContext";
 import Layout from "../../components/Layout";
@@ -10,21 +10,51 @@ import Layout from "../../components/Layout";
 const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 const MONTHS = ["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
 
-const fmt = (d: string) => new Date(d).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 const fmtTime = (d: string) => new Date(d).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-const toInputDT = (d: string) => new Date(d).toISOString().slice(0, 16);
 const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 
 type Modal = { mode: "create"; date: Date } | { mode: "edit"; event: CalendarEvent } | { mode: "day"; date: Date; events: CalendarEvent[] };
 
-const emptyForm = (date?: Date): EventCreate & { ends_at: string; description: string } => ({
-  organization_id: 0,
-  title: "",
-  starts_at: date ? `${date.toISOString().slice(0, 10)}T09:00` : new Date().toISOString().slice(0, 16),
-  ends_at: date ? `${date.toISOString().slice(0, 10)}T10:00` : "",
-  description: "",
-  participant_ids: [],
-});
+type FormState = {
+  organization_id: number;
+  title: string;
+  start_date: string;
+  start_time: string;
+  end_date: string;
+  end_time: string;
+  description: string;
+  participant_ids: number[];
+};
+
+const emptyForm = (orgId: number, date?: Date): FormState => {
+  const dateStr = date ? date.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+  return {
+    organization_id: orgId,
+    title: "",
+    start_date: dateStr,
+    start_time: "09:00",
+    end_date: dateStr,
+    end_time: "10:00",
+    description: "",
+    participant_ids: [],
+  };
+};
+
+const toFormState = (e: CalendarEvent): FormState => {
+  const s = new Date(e.starts_at);
+  const end = e.ends_at ? new Date(e.ends_at) : null;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return {
+    organization_id: e.organization_id,
+    title: e.title,
+    start_date: s.toISOString().slice(0, 10),
+    start_time: `${pad(s.getHours())}:${pad(s.getMinutes())}`,
+    end_date: end ? end.toISOString().slice(0, 10) : s.toISOString().slice(0, 10),
+    end_time: end ? `${pad(end.getHours())}:${pad(end.getMinutes())}` : "10:00",
+    description: e.description ?? "",
+    participant_ids: e.participants.map((p) => p.id),
+  };
+};
 
 export default function CalendarPage() {
   const navigate = useNavigate();
@@ -35,8 +65,9 @@ export default function CalendarPage() {
   const [cur, setCur] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [orgUsers, setOrgUsers] = useState<OrgUser[]>([]);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [modal, setModal] = useState<Modal | null>(null);
-  const [form, setForm] = useState(emptyForm());
+  const [form, setForm] = useState<FormState>(emptyForm(0));
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -56,16 +87,19 @@ export default function CalendarPage() {
   };
 
   useEffect(() => { load(cur); }, [cur]);
-  useEffect(() => { fetchOrgUsers().then(setOrgUsers).catch(() => null); }, []);
+  useEffect(() => {
+    fetchOrgUsers().then(setOrgUsers).catch(() => null);
+    fetchOrganizations().then(setOrganizations).catch(() => null);
+  }, []);
+
+  const defaultOrgId = organizations[0]?.id ?? 0;
 
   const prevMonth = () => setCur(new Date(cur.getFullYear(), cur.getMonth() - 1, 1));
   const nextMonth = () => setCur(new Date(cur.getFullYear(), cur.getMonth() + 1, 1));
 
-  // Build calendar grid
   const days = useMemo(() => {
     const first = new Date(cur.getFullYear(), cur.getMonth(), 1);
     const last = new Date(cur.getFullYear(), cur.getMonth() + 1, 0);
-    // Monday-first: (getDay()+6)%7
     const startOffset = (first.getDay() + 6) % 7;
     const grid: (Date | null)[] = [];
     for (let i = 0; i < startOffset; i++) grid.push(null);
@@ -85,19 +119,13 @@ export default function CalendarPage() {
   }, [events]);
 
   const openCreate = (date: Date) => {
-    setForm({ ...emptyForm(date), organization_id: events[0]?.organization_id ?? 0 });
+    const orgId = defaultOrgId;
+    setForm(emptyForm(orgId, date));
     setModal({ mode: "create", date });
   };
 
   const openEdit = (e: CalendarEvent) => {
-    setForm({
-      organization_id: e.organization_id,
-      title: e.title,
-      starts_at: toInputDT(e.starts_at),
-      ends_at: e.ends_at ? toInputDT(e.ends_at) : "",
-      description: e.description ?? "",
-      participant_ids: e.participants.map((p) => p.id),
-    });
+    setForm(toFormState(e));
     setModal({ mode: "edit", event: e });
   };
 
@@ -108,24 +136,33 @@ export default function CalendarPage() {
 
   const closeModal = () => setModal(null);
 
+  const buildBody = (): EventCreate => ({
+    organization_id: form.organization_id,
+    title: form.title,
+    starts_at: new Date(`${form.start_date}T${form.start_time}`).toISOString(),
+    ends_at: form.end_date && form.end_time
+      ? new Date(`${form.end_date}T${form.end_time}`).toISOString()
+      : undefined,
+    description: form.description || undefined,
+    participant_ids: form.participant_ids,
+  });
+
   const handleSave = async () => {
-    if (!form.title || !form.starts_at) return;
+    if (!form.title || !form.start_date) return;
     setSaving(true);
     try {
-      const body: EventCreate = {
-        organization_id: form.organization_id,
-        title: form.title,
-        starts_at: new Date(form.starts_at).toISOString(),
-        ends_at: form.ends_at ? new Date(form.ends_at).toISOString() : undefined,
-        description: form.description || undefined,
-        participant_ids: form.participant_ids,
-      };
       if (modal?.mode === "create") {
-        const created = await createEvent(body);
-        setEvents((prev) => [...prev, created]);
+        const created = await createEvent(buildBody());
+        setEvents((prev) => [...prev, {
+          ...created,
+          participants: Array.isArray(created.participants) ? created.participants : [],
+        }]);
       } else if (modal?.mode === "edit") {
-        const updated = await updateEvent(modal.event.id, body);
-        setEvents((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+        const updated = await updateEvent(modal.event.id, buildBody());
+        setEvents((prev) => prev.map((e) => (e.id === updated.id ? {
+          ...updated,
+          participants: Array.isArray(updated.participants) ? updated.participants : [],
+        } : e)));
       }
       closeModal();
     } catch { alert("Ошибка при сохранении"); }
@@ -142,9 +179,18 @@ export default function CalendarPage() {
   const toggleParticipant = (uid: number) => {
     setForm((f) => ({
       ...f,
-      participant_ids: f.participant_ids?.includes(uid)
+      participant_ids: f.participant_ids.includes(uid)
         ? f.participant_ids.filter((id) => id !== uid)
-        : [...(f.participant_ids ?? []), uid],
+        : [...f.participant_ids, uid],
+    }));
+  };
+
+  const selectAllParticipants = () => {
+    const allIds = orgUsers.map((u) => u.id);
+    const allSelected = allIds.every((id) => form.participant_ids.includes(id));
+    setForm((f) => ({
+      ...f,
+      participant_ids: allSelected ? [] : allIds,
     }));
   };
 
@@ -152,6 +198,9 @@ export default function CalendarPage() {
 
   const participantName = (p: OrgUser) =>
     [p.last_name, p.first_name].filter(Boolean).join(" ") || p.email;
+
+  const isFormMode = modal?.mode === "create" || modal?.mode === "edit";
+  const allParticipantsSelected = orgUsers.length > 0 && orgUsers.every((u) => form.participant_ids.includes(u.id));
 
   return (
     <Layout>
@@ -186,7 +235,6 @@ export default function CalendarPage() {
 
       {/* Calendar grid */}
       <div className="card shadow-sm border-0 rounded-4 overflow-hidden">
-        {/* Weekday headers */}
         <div className="d-grid" style={{ gridTemplateColumns: "repeat(7, 1fr)", background: "#37474f" }}>
           {WEEKDAYS.map((d) => (
             <div key={d} className="text-center text-white py-2 fw-semibold" style={{ fontSize: 13 }}>{d}</div>
@@ -303,7 +351,7 @@ export default function CalendarPage() {
       )}
 
       {/* Create / Edit modal */}
-      {(modal?.mode === "create" || modal?.mode === "edit") && (
+      {isFormMode && (
         <div className="modal show d-block" style={{ background: "rgba(0,0,0,0.45)" }} onClick={closeModal}>
           <div className="modal-dialog modal-lg" onClick={(e) => e.stopPropagation()}>
             <div className="modal-content rounded-4 overflow-hidden">
@@ -317,36 +365,80 @@ export default function CalendarPage() {
 
               <div className="modal-body">
                 <div className="row g-3">
+
+                  {/* Organization selector */}
+                  {organizations.length > 1 && (
+                    <div className="col-12">
+                      <label className="form-label small fw-semibold">Организация</label>
+                      <select
+                        className="form-select"
+                        value={form.organization_id}
+                        disabled={modal.mode === "edit"}
+                        onChange={(e) => setForm((f) => ({ ...f, organization_id: Number(e.target.value) }))}
+                      >
+                        {organizations.map((o) => (
+                          <option key={o.id} value={o.id}>{o.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
                   <div className="col-12">
                     <label className="form-label small fw-semibold">Название *</label>
                     <input className="form-control" value={form.title}
                       onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
                       placeholder="Название мероприятия" />
                   </div>
-                  <div className="col-md-6">
-                    <label className="form-label small fw-semibold">Начало *</label>
-                    <input type="datetime-local" className="form-control" value={form.starts_at}
-                      onChange={(e) => setForm((f) => ({ ...f, starts_at: e.target.value }))} />
+
+                  {/* Start date + time */}
+                  <div className="col-md-7">
+                    <label className="form-label small fw-semibold">Дата начала *</label>
+                    <input type="date" className="form-control" value={form.start_date}
+                      onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))} />
                   </div>
-                  <div className="col-md-6">
-                    <label className="form-label small fw-semibold">Конец</label>
-                    <input type="datetime-local" className="form-control" value={form.ends_at}
-                      onChange={(e) => setForm((f) => ({ ...f, ends_at: e.target.value }))} />
+                  <div className="col-md-5">
+                    <label className="form-label small fw-semibold">Время начала *</label>
+                    <input type="time" className="form-control" value={form.start_time}
+                      onChange={(e) => setForm((f) => ({ ...f, start_time: e.target.value }))} />
                   </div>
+
+                  {/* End date + time */}
+                  <div className="col-md-7">
+                    <label className="form-label small fw-semibold">Дата окончания</label>
+                    <input type="date" className="form-control" value={form.end_date}
+                      onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))} />
+                  </div>
+                  <div className="col-md-5">
+                    <label className="form-label small fw-semibold">Время окончания</label>
+                    <input type="time" className="form-control" value={form.end_time}
+                      onChange={(e) => setForm((f) => ({ ...f, end_time: e.target.value }))} />
+                  </div>
+
                   <div className="col-12">
                     <label className="form-label small fw-semibold">Описание</label>
                     <textarea className="form-control" rows={2} value={form.description}
                       onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
                   </div>
+
                   {orgUsers.length > 0 && (
                     <div className="col-12">
-                      <label className="form-label small fw-semibold">Участники</label>
+                      <div className="d-flex align-items-center justify-content-between mb-1">
+                        <label className="form-label small fw-semibold mb-0">Участники</label>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-secondary py-0 px-2"
+                          style={{ fontSize: 12 }}
+                          onClick={selectAllParticipants}
+                        >
+                          {allParticipantsSelected ? "Снять всех" : "Выбрать всех"}
+                        </button>
+                      </div>
                       <div className="border rounded-3 p-2" style={{ maxHeight: 160, overflowY: "auto" }}>
                         {orgUsers.map((u) => (
                           <div key={u.id} className="form-check mb-1">
                             <input type="checkbox" className="form-check-input"
                               id={`u${u.id}`}
-                              checked={form.participant_ids?.includes(u.id) ?? false}
+                              checked={form.participant_ids.includes(u.id)}
                               onChange={() => toggleParticipant(u.id)} />
                             <label className="form-check-label" htmlFor={`u${u.id}`} style={{ fontSize: 13 }}>
                               {participantName(u)}

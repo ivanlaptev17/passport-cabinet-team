@@ -755,7 +755,7 @@ async def delete_incident(
         current_user,
         existing["organization_id"],
         conn,
-        allowed_org_roles=("DIRECTOR", "STAFF"),
+        allowed_org_roles=("DIRECTOR",),
     )
 
     await conn.execute(
@@ -878,7 +878,10 @@ async def create_event(
     current_user=Depends(get_current_user),
     conn=Depends(get_connection),
 ):
-    await require_org_write_access(current_user, payload.organization_id, conn)
+    await require_org_write_access(
+        current_user, payload.organization_id, conn,
+        allowed_org_roles=("DIRECTOR", "STAFF"),
+    )
 
     event = await conn.fetchrow(
         """
@@ -914,7 +917,10 @@ async def update_event(
     if not existing:
         raise HTTPException(status_code=404, detail="Event not found")
 
-    await require_org_write_access(current_user, existing["organization_id"], conn)
+    await require_org_write_access(
+        current_user, existing["organization_id"], conn,
+        allowed_org_roles=("DIRECTOR", "STAFF"),
+    )
 
     fields = {k: v for k, v in payload.model_dump(exclude={"participant_ids"}).items() if v is not None}
     if fields:
@@ -945,6 +951,9 @@ async def delete_event(
     if not existing:
         raise HTTPException(status_code=404, detail="Event not found")
 
-    await require_org_write_access(current_user, existing["organization_id"], conn)
+    await require_org_write_access(
+        current_user, existing["organization_id"], conn,
+        allowed_org_roles=("DIRECTOR", "STAFF"),
+    )
     await conn.execute("DELETE FROM events WHERE id = $1", event_id)
     return {"ok": True}
