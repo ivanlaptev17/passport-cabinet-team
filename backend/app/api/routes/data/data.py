@@ -1,5 +1,5 @@
 from typing import Optional, List
-from datetime import date, datetime
+from datetime import date, datetime, timezone as _tz
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
@@ -51,6 +51,13 @@ class IncidentUpdate(BaseModel):
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _naive(dt: datetime | None) -> datetime | None:
+    """Strip timezone so asyncpg can write to TIMESTAMP WITHOUT TIME ZONE columns."""
+    if dt is None or dt.tzinfo is None:
+        return dt
+    return dt.astimezone(_tz.utc).replace(tzinfo=None)
+
 
 async def _org_ids_filter(current_user: dict, conn) -> list[int] | None:
     if is_org_scoped_user(current_user):
@@ -889,8 +896,8 @@ async def create_event(
         VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id
         """,
-        payload.organization_id, payload.title, payload.starts_at,
-        payload.ends_at, payload.description, current_user["id"],
+        payload.organization_id, payload.title, _naive(payload.starts_at),
+        _naive(payload.ends_at), payload.description, current_user["id"],
     )
     eid = event["id"]
 
@@ -922,7 +929,11 @@ async def update_event(
         allowed_org_roles=("DIRECTOR", "STAFF"),
     )
 
-    fields = {k: v for k, v in payload.model_dump(exclude={"participant_ids"}).items() if v is not None}
+    raw = payload.model_dump(exclude={"participant_ids"})
+    fields = {
+        k: (_naive(v) if isinstance(v, datetime) else v)
+        for k, v in raw.items() if v is not None
+    }
     if fields:
         set_clause = ", ".join(f"{k} = ${i+2}" for i, k in enumerate(fields))
         await conn.execute(f"UPDATE events SET {set_clause} WHERE id = $1", event_id, *fields.values())

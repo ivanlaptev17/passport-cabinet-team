@@ -4,3 +4,5 @@ asyncpg
 passlib[bcrypt]
 pydantic
 email-validator
+python-multipart
+aiofiles

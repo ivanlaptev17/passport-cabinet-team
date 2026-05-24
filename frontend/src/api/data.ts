@@ -306,3 +306,47 @@ export const updateEvent = (id: number, body: EventUpdate) =>
 
 export const deleteEvent = (id: number) =>
   apiFetch<{ ok: boolean }>(`/data/events/${id}`, { method: "DELETE" });
+
+// ── Documents ─────────────────────────────────────────────────────────────────
+
+export type Document = {
+  id: number;
+  organization_id: number;
+  organization: string;
+  name: string;
+  description: string | null;
+  status: string;
+  original_filename: string;
+  file_size: number | null;
+  uploaded_at: string;
+  updated_at: string;
+  uploader_last_name: string | null;
+  uploader_first_name: string | null;
+  uploader_email: string | null;
+};
+
+export const fetchDocuments = () =>
+  apiFetch<Document[]>("/data/documents");
+
+export const uploadDocument = (formData: FormData) => {
+  const API_URL = (import.meta.env.VITE_API_URL as string) ?? "http://localhost:8000";
+  return fetch(`${API_URL}/data/documents`, {
+    method: "POST",
+    credentials: "include",
+    body: formData,
+  }).then((res) => {
+    if (!res.ok) throw new Error(`${res.status}`);
+    return res.json() as Promise<Document>;
+  });
+};
+
+export const updateDocument = (id: number, body: { name?: string; description?: string; status?: string }) =>
+  apiFetch<Document>(`/data/documents/${id}`, { method: "PUT", body: JSON.stringify(body) });
+
+export const deleteDocument = (id: number) =>
+  apiFetch<{ ok: boolean }>(`/data/documents/${id}`, { method: "DELETE" });
+
+export const getDocumentDownloadUrl = (id: number) => {
+  const API_URL = (import.meta.env.VITE_API_URL as string) ?? "http://localhost:8000";
+  return `${API_URL}/data/documents/${id}/download`;
+};

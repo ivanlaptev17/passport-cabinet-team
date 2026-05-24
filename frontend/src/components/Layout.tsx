@@ -46,6 +46,8 @@ export default function Layout({ children }: Props) {
 
   const isHomeActive = pathname === "/dashboard";
   const isCalendarActive = pathname === "/calendar";
+  const isDocumentsActive = pathname === "/documents";
+  const isIncidentsActive = pathname === "/incidents";
 
   const isDataActive =
     pathname.startsWith("/organizations") ||
@@ -114,6 +116,30 @@ export default function Layout({ children }: Props) {
               >
                 <i className="fa fa-calendar me-2" />
                 Календарь
+              </Link>
+            </li>
+
+            <li className="nav-item">
+              <Link
+                to="/documents"
+                className={`nav-link px-3 py-2 rounded-pill ${
+                  isDocumentsActive ? "layout-nav-active" : "layout-nav-default"
+                }`}
+              >
+                <i className="fa fa-folder-open me-2" />
+                Документы
+              </Link>
+            </li>
+
+            <li className="nav-item">
+              <Link
+                to="/incidents"
+                className={`nav-link px-3 py-2 rounded-pill ${
+                  isIncidentsActive ? "layout-nav-active" : "layout-nav-default"
+                }`}
+              >
+                <i className="fa fa-triangle-exclamation me-2" />
+                Инциденты
               </Link>
             </li>
 

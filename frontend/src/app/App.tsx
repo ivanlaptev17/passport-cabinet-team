@@ -11,6 +11,7 @@ import ContingentPage from "../pages/ContingentPage";
 import EducationPage from "../pages/EducationPage";
 import CalendarPage from "../pages/CalendarPage";
 import IncidentsPage from "../pages/IncidentsPage/index";
+import DocumentsPage from "../pages/DocumentsPage/index";
 import ProfilePage from "../pages/ProfilePage/index";
 import SettingsPage from "../pages/SettingsPage";
 
@@ -49,6 +50,7 @@ function AppRoutes() {
       <Route path="/education"    element={<AuthGuard element={<EducationPage />} />} />
       <Route path="/calendar"     element={<AuthGuard element={<CalendarPage />} />} />
       <Route path="/incidents"    element={<AuthGuard element={<IncidentsPage />} />} />
+      <Route path="/documents"    element={<AuthGuard element={<DocumentsPage />} />} />
       <Route path="/profile"      element={<AuthGuard element={<ProfilePage />} />} />
       <Route path="/settings"     element={<AuthGuard element={<SettingsPage />} />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
