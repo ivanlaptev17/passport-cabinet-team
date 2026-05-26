@@ -163,7 +163,7 @@ export default function IncidentsPage() {
     if (!canManage) return;
 
     if (!form.organization_id || !form.title.trim()) {
-      alert("Заполни организацию и заголовок");
+      alert("Заполните организацию и заголовок");
       return;
     }
 
@@ -417,7 +417,7 @@ export default function IncidentsPage() {
                         }))
                       }
                     >
-                      <option value="">Выбери организацию</option>
+                      <option value="">Выберите организацию</option>
                       {organizations.map((org) => (
                         <option key={org.id} value={org.id}>
                           {org.name}

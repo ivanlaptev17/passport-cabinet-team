@@ -152,19 +152,12 @@ export default function CalendarPage() {
     setSaving(true);
     try {
       if (modal?.mode === "create") {
-        const created = await createEvent(buildBody());
-        setEvents((prev) => [...prev, {
-          ...created,
-          participants: Array.isArray(created.participants) ? created.participants : [],
-        }]);
+        await createEvent(buildBody());
       } else if (modal?.mode === "edit") {
-        const updated = await updateEvent(modal.event.id, buildBody());
-        setEvents((prev) => prev.map((e) => (e.id === updated.id ? {
-          ...updated,
-          participants: Array.isArray(updated.participants) ? updated.participants : [],
-        } : e)));
+        await updateEvent(modal.event.id, buildBody());
       }
       closeModal();
+      load(cur);
     } catch { alert("Ошибка при сохранении"); }
     finally { setSaving(false); }
   };
@@ -172,8 +165,8 @@ export default function CalendarPage() {
   const handleDelete = async (id: number) => {
     if (!confirm("Удалить мероприятие?")) return;
     await deleteEvent(id);
-    setEvents((prev) => prev.filter((e) => e.id !== id));
     closeModal();
+    load(cur);
   };
 
   const toggleParticipant = (uid: number) => {

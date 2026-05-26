@@ -127,7 +127,7 @@ export default function DocumentsPage() {
 
   const handleUpload = async () => {
     if (!uploadForm.file || !uploadForm.name.trim() || !uploadForm.organization_id) {
-      alert("Заполни организацию, название и выбери файл");
+      alert("Заполните организацию, название и выберите файл");
       return;
     }
     setUploading(true);
@@ -183,8 +183,22 @@ export default function DocumentsPage() {
     }
   };
 
-  const handleDownload = (doc: Document) => {
-    window.open(getDocumentDownloadUrl(doc.id), "_blank");
+  const handleDownload = async (doc: Document) => {
+    try {
+      const res = await fetch(getDocumentDownloadUrl(doc.id), { credentials: "include" });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = doc.original_filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert("Не удалось скачать файл");
+    }
   };
 
   return (
@@ -358,7 +372,7 @@ export default function DocumentsPage() {
                       value={uploadForm.organization_id}
                       onChange={(e) => setUploadForm((f) => ({ ...f, organization_id: e.target.value }))}
                     >
-                      <option value="">Выбери организацию</option>
+                      <option value="">Выберите организацию</option>
                       {organizations.map((o) => (
                         <option key={o.id} value={o.id}>{o.name}</option>
                       ))}
