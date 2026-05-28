@@ -183,6 +183,18 @@ export default function DocumentsPage() {
     }
   };
 
+  const buildDownloadName = (doc: Document): string => {
+    const ext = doc.original_filename.includes(".")
+      ? "." + doc.original_filename.split(".").pop()
+      : "";
+    const uploaderPart = doc.uploader_last_name
+      ? ` — ${doc.uploader_last_name}${doc.uploader_first_name ? ` ${doc.uploader_first_name[0]}.` : ""}`
+      : "";
+    const datePart = ` ${new Date(doc.uploaded_at).toLocaleDateString("ru-RU")}`;
+    const base = `${doc.name}${uploaderPart}${datePart}`;
+    return base.replace(/[/\\:*?"<>|]/g, "_") + ext;
+  };
+
   const handleDownload = async (doc: Document) => {
     try {
       const res = await fetch(getDocumentDownloadUrl(doc.id), { credentials: "include" });
@@ -191,7 +203,7 @@ export default function DocumentsPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = doc.original_filename;
+      a.download = buildDownloadName(doc);
       document.body.appendChild(a);
       a.click();
       a.remove();

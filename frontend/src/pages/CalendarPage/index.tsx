@@ -1,5 +1,5 @@
-import { useEffect, useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState, useMemo, useRef } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   fetchEvents, fetchOrgUsers, fetchOrganizations, createEvent, updateEvent, deleteEvent,
   type CalendarEvent, type OrgUser, type EventCreate, type Organization,
@@ -58,8 +58,11 @@ const toFormState = (e: CalendarEvent): FormState => {
 
 export default function CalendarPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const canEdit = user?.role_code !== "MINOBR";
+  const eventIdFromUrl = Number(searchParams.get("event")) || null;
+  const autoOpenedRef = useRef(false);
 
   const today = new Date();
   const [cur, setCur] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
@@ -91,6 +94,15 @@ export default function CalendarPage() {
     fetchOrgUsers().then(setOrgUsers).catch(() => null);
     fetchOrganizations().then(setOrganizations).catch(() => null);
   }, []);
+
+  useEffect(() => {
+    if (!eventIdFromUrl || autoOpenedRef.current || loading) return;
+    const ev = events.find((e) => e.id === eventIdFromUrl);
+    if (ev) {
+      autoOpenedRef.current = true;
+      openEdit(ev);
+    }
+  }, [events, eventIdFromUrl, loading]);
 
   const defaultOrgId = organizations[0]?.id ?? 0;
 
@@ -139,16 +151,24 @@ export default function CalendarPage() {
   const buildBody = (): EventCreate => ({
     organization_id: form.organization_id,
     title: form.title,
-    starts_at: new Date(`${form.start_date}T${form.start_time}`).toISOString(),
+    starts_at: `${form.start_date}T${form.start_time}:00`,
     ends_at: form.end_date && form.end_time
-      ? new Date(`${form.end_date}T${form.end_time}`).toISOString()
+      ? `${form.end_date}T${form.end_time}:00`
       : undefined,
     description: form.description || undefined,
     participant_ids: form.participant_ids,
   });
 
+  const isEndBeforeStart =
+    form.end_date && form.end_time &&
+    `${form.end_date}T${form.end_time}` < `${form.start_date}T${form.start_time}`;
+
   const handleSave = async () => {
     if (!form.title || !form.start_date) return;
+    if (isEndBeforeStart) {
+      alert("Дата и время окончания не могут быть раньше начала");
+      return;
+    }
     setSaving(true);
     try {
       if (modal?.mode === "create") {
@@ -398,13 +418,22 @@ export default function CalendarPage() {
                   {/* End date + time */}
                   <div className="col-md-7">
                     <label className="form-label small fw-semibold">Дата окончания</label>
-                    <input type="date" className="form-control" value={form.end_date}
+                    <input type="date"
+                      className={`form-control${isEndBeforeStart ? " is-invalid" : ""}`}
+                      value={form.end_date}
                       onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))} />
                   </div>
                   <div className="col-md-5">
                     <label className="form-label small fw-semibold">Время окончания</label>
-                    <input type="time" className="form-control" value={form.end_time}
+                    <input type="time"
+                      className={`form-control${isEndBeforeStart ? " is-invalid" : ""}`}
+                      value={form.end_time}
                       onChange={(e) => setForm((f) => ({ ...f, end_time: e.target.value }))} />
+                    {isEndBeforeStart && (
+                      <div className="invalid-feedback d-block" style={{ fontSize: 11 }}>
+                        Окончание раньше начала
+                      </div>
+                    )}
                   </div>
 
                   <div className="col-12">

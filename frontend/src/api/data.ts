@@ -346,6 +346,28 @@ export const updateDocument = (id: number, body: { name?: string; description?: 
 export const deleteDocument = (id: number) =>
   apiFetch<{ ok: boolean }>(`/data/documents/${id}`, { method: "DELETE" });
 
+// ── Notifications ─────────────────────────────────────────────────────────────
+
+export type Notifications = {
+  total: number;
+  incidents: { id: number; title: string; severity: string; status: string }[];
+  overdue_documents: { id: number; name: string; uploaded_at: string }[];
+  today_events: { id: number; title: string; starts_at: string }[];
+  upcoming_events: { id: number; title: string; starts_at: string }[];
+};
+
+export const fetchNotifications = () =>
+  apiFetch<Notifications>("/data/notifications");
+
+export const markNotificationRead = (item_type: string, item_id: number) =>
+  apiFetch<{ ok: boolean }>("/data/notifications/read", {
+    method: "POST",
+    body: JSON.stringify({ item_type, item_id }),
+  });
+
+export const markAllNotificationsRead = () =>
+  apiFetch<{ ok: boolean }>("/data/notifications/read-all", { method: "POST" });
+
 export const getDocumentDownloadUrl = (id: number) => {
   const API_URL = (import.meta.env.VITE_API_URL as string) ?? "http://localhost:8000";
   return `${API_URL}/data/documents/${id}/download`;

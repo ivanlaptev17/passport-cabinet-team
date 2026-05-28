@@ -1,9 +1,13 @@
 from typing import Optional, List
 from datetime import date, datetime, timezone as _tz
+import asyncio
+import json as _json
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from app.api.database.db import get_connection
+from app.api.database import db as _db
 from app.api.security import get_current_user
 from app.api.permissions import (
     get_user_org_ids,
@@ -968,3 +972,160 @@ async def delete_event(
     )
     await conn.execute("DELETE FROM events WHERE id = $1", event_id)
     return {"ok": True}
+
+
+# ── Notifications ─────────────────────────────────────────────────────────────
+
+async def _notifications_data(current_user: dict, conn) -> dict:
+    user_id = current_user["id"]
+    org_ids = await _org_ids_filter(current_user, conn)
+
+    incidents = await conn.fetch(
+        """
+        SELECT id, title, severity, status
+        FROM incidents
+        WHERE status != 'RESOLVED'
+          AND ($1::bigint[] IS NULL OR organization_id = ANY($1))
+          AND id NOT IN (
+            SELECT item_id FROM notification_reads WHERE user_id = $2 AND item_type = 'incident'
+          )
+        ORDER BY
+            CASE severity WHEN 'HIGH' THEN 0 WHEN 'MEDIUM' THEN 1 ELSE 2 END,
+            created_at DESC
+        LIMIT 5
+        """,
+        org_ids, user_id,
+    )
+
+    overdue_docs = await conn.fetch(
+        """
+        SELECT id, name, uploaded_at
+        FROM documents
+        WHERE status = 'OVERDUE'
+          AND ($1::bigint[] IS NULL OR organization_id = ANY($1))
+          AND id NOT IN (
+            SELECT item_id FROM notification_reads WHERE user_id = $2 AND item_type = 'document'
+          )
+        ORDER BY updated_at DESC
+        LIMIT 5
+        """,
+        org_ids, user_id,
+    )
+
+    today_events = await conn.fetch(
+        """
+        SELECT id, title, starts_at
+        FROM events
+        WHERE starts_at >= CURRENT_DATE
+          AND starts_at < CURRENT_DATE + INTERVAL '1 day'
+          AND ($1::bigint[] IS NULL OR organization_id = ANY($1))
+          AND id NOT IN (
+            SELECT item_id FROM notification_reads WHERE user_id = $2 AND item_type = 'event'
+          )
+        ORDER BY starts_at
+        LIMIT 5
+        """,
+        org_ids, user_id,
+    )
+
+    upcoming_events = await conn.fetch(
+        """
+        SELECT id, title, starts_at
+        FROM events
+        WHERE starts_at >= CURRENT_DATE + INTERVAL '1 day'
+          AND starts_at <= NOW() + INTERVAL '7 days'
+          AND ($1::bigint[] IS NULL OR organization_id = ANY($1))
+          AND id NOT IN (
+            SELECT item_id FROM notification_reads WHERE user_id = $2 AND item_type = 'event'
+          )
+        ORDER BY starts_at
+        LIMIT 5
+        """,
+        org_ids, user_id,
+    )
+
+    return {
+        "total": len(incidents) + len(overdue_docs) + len(today_events) + len(upcoming_events),
+        "incidents": [dict(r) for r in incidents],
+        "overdue_documents": [dict(r) for r in overdue_docs],
+        "today_events": [
+            {**dict(r), "starts_at": r["starts_at"].isoformat() if hasattr(r["starts_at"], "isoformat") else r["starts_at"]}
+            for r in today_events
+        ],
+        "upcoming_events": [
+            {**dict(r), "starts_at": r["starts_at"].isoformat() if hasattr(r["starts_at"], "isoformat") else r["starts_at"]}
+            for r in upcoming_events
+        ],
+    }
+
+
+class NotificationReadItem(BaseModel):
+    item_type: str  # 'incident' | 'document' | 'event'
+    item_id: int
+
+
+@router.get("/notifications")
+async def get_notifications(
+    current_user=Depends(get_current_user),
+    conn=Depends(get_connection),
+):
+    return await _notifications_data(current_user, conn)
+
+
+@router.post("/notifications/read")
+async def mark_notification_read(
+    body: NotificationReadItem,
+    current_user=Depends(get_current_user),
+    conn=Depends(get_connection),
+):
+    await conn.execute(
+        """
+        INSERT INTO notification_reads (user_id, item_type, item_id)
+        VALUES ($1, $2, $3)
+        ON CONFLICT DO NOTHING
+        """,
+        current_user["id"], body.item_type, body.item_id,
+    )
+    return {"ok": True}
+
+
+@router.post("/notifications/read-all")
+async def mark_all_notifications_read(
+    current_user=Depends(get_current_user),
+    conn=Depends(get_connection),
+):
+    data = await _notifications_data(current_user, conn)
+    rows: list[tuple] = []
+    user_id = current_user["id"]
+    for inc in data["incidents"]:
+        rows.append((user_id, "incident", inc["id"]))
+    for doc in data["overdue_documents"]:
+        rows.append((user_id, "document", doc["id"]))
+    for ev in data["today_events"] + data["upcoming_events"]:
+        rows.append((user_id, "event", ev["id"]))
+    if rows:
+        await conn.executemany(
+            "INSERT INTO notification_reads (user_id, item_type, item_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+            rows,
+        )
+    return {"ok": True}
+
+
+@router.get("/notifications/stream")
+async def notifications_stream(current_user=Depends(get_current_user)):
+    async def generator():
+        try:
+            while True:
+                async with _db.pool.acquire() as conn:
+                    data = await _notifications_data(current_user, conn)
+                payload = _json.dumps(data, default=str)
+                yield f"data: {payload}\n\n"
+                await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            pass
+
+    return StreamingResponse(
+        generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

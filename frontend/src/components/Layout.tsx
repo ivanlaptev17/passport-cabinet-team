@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { logoutUser } from "../api/auth";
 import { fetchProfile, type Profile } from "../api/data";
+import NotificationBell from "./NotificationBell";
 
 type Props = { children: ReactNode };
 
@@ -232,6 +233,8 @@ export default function Layout({ children }: Props) {
               )}
             </li>
           </ul>
+
+          <NotificationBell />
 
           <div className="position-relative" ref={userMenuRef}>
             <button

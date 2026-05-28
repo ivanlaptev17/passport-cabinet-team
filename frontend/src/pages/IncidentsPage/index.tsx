@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   createIncident,
   deleteIncident,
@@ -99,10 +99,19 @@ export default function IncidentsPage() {
   const [saving, setSaving] = useState(false);
 
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const highlightId = Number(searchParams.get("highlight")) || null;
+  const highlightRowRef = useRef<HTMLTableRowElement>(null);
   const { user } = useAuth();
 
   const canManage = user?.role_code !== "MINOBR";
   const canDelete = user?.role_code === "DIRECTOR" || user?.role_code === "ADMIN";
+
+  useEffect(() => {
+    if (highlightId && highlightRowRef.current) {
+      highlightRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [highlightId, incidents]);
 
   useEffect(() => {
     Promise.all([fetchIncidents(), fetchOrganizations()])
@@ -314,7 +323,13 @@ export default function IncidentsPage() {
                         </tr>
                       ) : (
                         filteredIncidents.map((incident) => (
-                          <tr key={incident.id}>
+                          <tr
+                            key={incident.id}
+                            ref={incident.id === highlightId ? highlightRowRef : null}
+                            style={incident.id === highlightId
+                              ? { background: "#fff3cd", transition: "background 0.5s" }
+                              : undefined}
+                          >
                             <td className="text-muted small">{incident.id}</td>
                             <td>{incident.organization}</td>
                             <td>
