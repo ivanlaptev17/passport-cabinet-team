@@ -372,3 +372,36 @@ export const getDocumentDownloadUrl = (id: number) => {
   const API_URL = (import.meta.env.VITE_API_URL as string) ?? "http://localhost:8000";
   return `${API_URL}/data/documents/${id}/download`;
 };
+
+// ── Document templates (constructor) ────────────────────────────────────────
+
+export type DocumentTemplateField = {
+  key: string;
+  label: string;
+  type: "text" | "list";
+  item_fields?: { key: string; label: string }[];
+};
+
+export type DocumentTemplate = {
+  id: string;
+  name: string;
+  fields: DocumentTemplateField[];
+};
+
+export const fetchDocumentTemplates = () =>
+  apiFetch<DocumentTemplate[]>("/data/document-templates");
+
+export const generateDocumentTemplate = async (
+  id: string,
+  values: Record<string, unknown>,
+): Promise<Blob> => {
+  const API_URL = (import.meta.env.VITE_API_URL as string) ?? "http://localhost:8000";
+  const res = await fetch(`${API_URL}/data/document-templates/${id}/generate`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ values }),
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.blob();
+};

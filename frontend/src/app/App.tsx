@@ -12,6 +12,7 @@ import EducationPage from "../pages/EducationPage";
 import CalendarPage from "../pages/CalendarPage";
 import IncidentsPage from "../pages/IncidentsPage/index";
 import DocumentsPage from "../pages/DocumentsPage/index";
+import DocumentTemplatesPage from "../pages/DocumentTemplatesPage/index";
 import ProfilePage from "../pages/ProfilePage/index";
 import SettingsPage from "../pages/SettingsPage";
 
@@ -51,6 +52,7 @@ function AppRoutes() {
       <Route path="/calendar"     element={<AuthGuard element={<CalendarPage />} />} />
       <Route path="/incidents"    element={<AuthGuard element={<IncidentsPage />} />} />
       <Route path="/documents"    element={<AuthGuard element={<DocumentsPage />} />} />
+      <Route path="/document-templates" element={<AuthGuard element={<DocumentTemplatesPage />} />} />
       <Route path="/profile"      element={<AuthGuard element={<ProfilePage />} />} />
       <Route path="/settings"     element={<AuthGuard element={<SettingsPage />} />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

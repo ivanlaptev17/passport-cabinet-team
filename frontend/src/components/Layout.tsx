@@ -48,6 +48,7 @@ export default function Layout({ children }: Props) {
   const isHomeActive = pathname === "/dashboard";
   const isCalendarActive = pathname === "/calendar";
   const isDocumentsActive = pathname === "/documents";
+  const isDocumentTemplatesActive = pathname === "/document-templates";
   const isIncidentsActive = pathname === "/incidents";
 
   const isDataActive =
@@ -129,6 +130,18 @@ export default function Layout({ children }: Props) {
               >
                 <i className="fa fa-folder-open me-2" />
                 Документы
+              </Link>
+            </li>
+
+            <li className="nav-item">
+              <Link
+                to="/document-templates"
+                className={`nav-link px-3 py-2 rounded-pill ${
+                  isDocumentTemplatesActive ? "layout-nav-active" : "layout-nav-default"
+                }`}
+              >
+                <i className="fa fa-file-pen me-2" />
+                Конструктор
               </Link>
             </li>
 
