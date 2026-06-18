@@ -378,7 +378,7 @@ export const getDocumentDownloadUrl = (id: number) => {
 export type DocumentTemplateField = {
   key: string;
   label: string;
-  type: "text" | "list";
+  type: "text" | "date" | "list";
   item_fields?: { key: string; label: string }[];
 };
 

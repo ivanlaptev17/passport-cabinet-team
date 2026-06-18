@@ -24,6 +24,25 @@ function buildInitialValues(template: DocumentTemplate): FormValues {
   return values;
 }
 
+function isoToRu(iso: string): string {
+  if (!iso) return iso;
+  const [y, m, d] = iso.split("-");
+  if (!y || !m || !d) return iso;
+  return `${d}.${m}.${y}`;
+}
+
+function prepareValues(template: DocumentTemplate, values: FormValues): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const field of template.fields) {
+    if (field.type === "date") {
+      out[field.key] = isoToRu((values[field.key] as string) ?? "");
+    } else {
+      out[field.key] = values[field.key];
+    }
+  }
+  return out;
+}
+
 export default function DocumentTemplatesPage() {
   const navigate = useNavigate();
 
@@ -52,7 +71,7 @@ export default function DocumentTemplatesPage() {
 
   const closeTemplate = () => setActiveTemplate(null);
 
-  const setTextValue = (key: string, value: string) => {
+  const setScalarValue = (key: string, value: string) => {
     setValues((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -86,7 +105,8 @@ export default function DocumentTemplatesPage() {
     if (!activeTemplate) return;
     setGenerating(true);
     try {
-      const blob = await generateDocumentTemplate(activeTemplate.id, values);
+      const payload = prepareValues(activeTemplate, values);
+      const blob = await generateDocumentTemplate(activeTemplate.id, payload);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -186,7 +206,21 @@ export default function DocumentTemplatesPage() {
                             type="text"
                             className="form-control"
                             value={(values[field.key] as string) ?? ""}
-                            onChange={(e) => setTextValue(field.key, e.target.value)}
+                            onChange={(e) => setScalarValue(field.key, e.target.value)}
+                          />
+                        </div>
+                      );
+                    }
+
+                    if (field.type === "date") {
+                      return (
+                        <div className="col-md-6" key={field.key}>
+                          <label className="form-label small fw-semibold">{field.label}</label>
+                          <input
+                            type="date"
+                            className="form-control"
+                            value={(values[field.key] as string) ?? ""}
+                            onChange={(e) => setScalarValue(field.key, e.target.value)}
                           />
                         </div>
                       );

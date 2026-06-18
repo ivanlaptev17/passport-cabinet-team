@@ -23,7 +23,7 @@ TEMPLATES = {
             {"key": "fio", "label": "ФИО сотрудника", "type": "text"},
             {"key": "position", "label": "Должность", "type": "text"},
             {"key": "organization_name", "label": "Организация", "type": "text"},
-            {"key": "issue_date", "label": "Дата выдачи", "type": "text"},
+            {"key": "issue_date", "label": "Дата выдачи", "type": "date"},
             {"key": "director_name", "label": "ФИО директора", "type": "text"},
         ],
     },
@@ -32,7 +32,7 @@ TEMPLATES = {
         "file": "responsible_order.docx",
         "fields": [
             {"key": "order_number", "label": "Номер приказа", "type": "text"},
-            {"key": "order_date", "label": "Дата приказа", "type": "text"},
+            {"key": "order_date", "label": "Дата приказа", "type": "date"},
             {"key": "organization_name", "label": "Организация", "type": "text"},
             {"key": "director_name", "label": "ФИО директора", "type": "text"},
             {
