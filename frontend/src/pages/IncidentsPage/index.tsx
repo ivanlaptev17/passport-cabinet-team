@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   createIncident,
   deleteIncident,
+  exportIncidentsXlsx,
   fetchIncidents,
   fetchOrganizations,
   type Incident,
@@ -252,19 +253,28 @@ export default function IncidentsPage() {
               </div>
             </div>
 
-            {canManage && (
+            <div className="d-flex gap-2">
               <button
-                className="btn btn-sm text-white border-0 px-3 py-2 rounded-pill shadow-sm"
-                style={{
-                  background: "linear-gradient(135deg, #dc3545, #c82333)",
-                  fontWeight: 600,
-                }}
-                onClick={openCreate}
+                className="btn btn-sm btn-outline-success"
+                onClick={() => void exportIncidentsXlsx()}
               >
-                <i className="fa fa-plus me-2" />
-                Добавить инцидент
+                <i className="fa fa-file-excel me-1" />
+                Скачать xlsx
               </button>
-            )}
+              {canManage && (
+                <button
+                  className="btn btn-sm text-white border-0 px-3 py-2 rounded-pill shadow-sm"
+                  style={{
+                    background: "linear-gradient(135deg, #dc3545, #c82333)",
+                    fontWeight: 600,
+                  }}
+                  onClick={openCreate}
+                >
+                  <i className="fa fa-plus me-2" />
+                  Добавить инцидент
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="mb-3">

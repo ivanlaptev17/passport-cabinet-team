@@ -373,6 +373,35 @@ export const getDocumentDownloadUrl = (id: number) => {
   return `${API_URL}/data/documents/${id}/download`;
 };
 
+// ── XLSX export ───────────────────────────────────────────────────────────────
+
+export const downloadXlsx = async (path: string, filename: string): Promise<void> => {
+  const API_URL = (import.meta.env.VITE_API_URL as string) ?? "http://localhost:8000";
+  const res = await fetch(`${API_URL}${path}`, { credentials: "include" });
+  if (!res.ok) throw new Error(`${res.status}`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};
+
+export const exportEmployeesXlsx = (category?: string) =>
+  downloadXlsx(
+    `/data/export/employees${category ? `?category=${category}` : ""}`,
+    "Сотрудники.xlsx",
+  );
+
+export const exportOrganizationsXlsx = () =>
+  downloadXlsx("/data/export/organizations", "Организации.xlsx");
+
+export const exportIncidentsXlsx = () =>
+  downloadXlsx("/data/export/incidents", "Инциденты.xlsx");
+
 // ── Document templates (constructor) ────────────────────────────────────────
 
 export type DocumentTemplateField = {

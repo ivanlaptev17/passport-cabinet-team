@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { fetchEmployees, fetchPositions, updateEmployee, type Employee, type Position } from "../../api/data";
+import { fetchEmployees, fetchPositions, updateEmployee, exportEmployeesXlsx, type Employee, type Position } from "../../api/data";
 import Layout from "../../components/Layout";
 import { useAuth } from "../../contexts/AuthContext";
 
@@ -78,14 +78,23 @@ export default function EmployeesPage() {
 
   return (
     <Layout>
-      <div className="d-flex align-items-center gap-3 mb-3">
-        <button className="btn btn-sm btn-outline-secondary" onClick={() => navigate("/dashboard")}>
-          <i className="fa fa-arrow-left me-1" />Назад
-        </button>
-        <div>
-          <h5 className="mb-0 fw-semibold">Кадровый состав</h5>
-          <small className="text-muted">Список сотрудников по категориям</small>
+      <div className="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+        <div className="d-flex align-items-center gap-3">
+          <button className="btn btn-sm btn-outline-secondary" onClick={() => navigate("/dashboard")}>
+            <i className="fa fa-arrow-left me-1" />Назад
+          </button>
+          <div>
+            <h5 className="mb-0 fw-semibold">Кадровый состав</h5>
+            <small className="text-muted">Список сотрудников по категориям</small>
+          </div>
         </div>
+        <button
+          className="btn btn-sm btn-outline-success"
+          onClick={() => void exportEmployeesXlsx(tab === "ALL" ? undefined : tab)}
+        >
+          <i className="fa fa-file-excel me-1" />
+          Скачать xlsx
+        </button>
       </div>
 
       <div className="mb-3">

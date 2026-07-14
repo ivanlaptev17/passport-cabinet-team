@@ -547,6 +547,43 @@ export default function DashboardPage() {
       <div className="row g-4">
         <div className="col-xl-9 col-lg-8">
           <div className="row g-0">
+
+            {/* ── Быстрые действия ── */}
+            <div className="col-12 mb-3">
+              <div className="card border-0 shadow-sm rounded-4" style={{ background: "linear-gradient(135deg, #37474f, #546e7a)" }}>
+                <div className="card-body p-4">
+                  <div className="fw-bold text-white mb-1" style={{ fontSize: 15 }}>Быстрые действия</div>
+                  <div className="text-white mb-3" style={{ fontSize: 12, opacity: 0.72 }}>Часто используемые функции</div>
+                  <div className="d-flex flex-wrap gap-2">
+                    <button
+                      className="btn btn-sm px-3 py-2 rounded-pill fw-semibold quick-action-btn"
+                      style={{ background: "rgba(255,255,255,0.15)", color: "#fff", border: "1px solid rgba(255,255,255,0.25)" }}
+                      onClick={() => navigate("/document-templates")}
+                    >
+                      <i className="fa fa-file-pen me-2" />
+                      Создать приказ
+                    </button>
+                    <button
+                      className="btn btn-sm px-3 py-2 rounded-pill fw-semibold quick-action-btn"
+                      style={{ background: "rgba(255,255,255,0.15)", color: "#fff", border: "1px solid rgba(255,255,255,0.25)" }}
+                      onClick={() => navigate("/calendar")}
+                    >
+                      <i className="fa fa-calendar-plus me-2" />
+                      Назначить встречу
+                    </button>
+                    <button
+                      className="btn btn-sm px-3 py-2 rounded-pill fw-semibold quick-action-btn"
+                      style={{ background: "rgba(255,255,255,0.15)", color: "#fff", border: "1px solid rgba(255,255,255,0.25)" }}
+                      onClick={() => navigate("/employees")}
+                    >
+                      <i className="fa fa-file-excel me-2" />
+                      Выгрузить в Excel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <SectionHeader
               title="Организация и МТБ"
               subtitle="Основные сведения об образовательной организации"
@@ -740,6 +777,15 @@ export default function DashboardPage() {
 
         .incidents-widget:hover .incident-widget-row {
           box-shadow: 0 0.35rem 0.9rem rgba(55,71,79,0.05);
+        }
+
+        .quick-action-btn {
+          transition: background 0.18s ease, transform 0.18s ease;
+        }
+
+        .quick-action-btn:hover {
+          background: rgba(255,255,255,0.28) !important;
+          transform: translateY(-1px);
         }
       `}</style>
     </Layout>

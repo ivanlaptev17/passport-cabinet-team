@@ -14,7 +14,7 @@ export default function Layout({ children }: Props) {
   const [profile, setProfile] = useState<Profile | null>(null);
 
   const userMenuRef = useRef<HTMLDivElement | null>(null);
-  const dataMenuRef = useRef<HTMLDivElement | null>(null);
+  const dataMenuRef = useRef<HTMLLIElement | null>(null);
 
   useEffect(() => {
     fetchProfile().then(setProfile).catch(() => null);
@@ -93,7 +93,7 @@ export default function Layout({ children }: Props) {
       >
         <div className="container-fluid px-4 py-2">
           <Link to="/dashboard" className="navbar-brand d-flex align-items-center mb-0" style={{ textDecoration: "none" }}>
-            <img src="/logo.png" alt="ИЦТО" style={{ height: 52, objectFit: "contain" }} />
+            <img src="/logo-white.svg" alt="ИЦТО" style={{ height: 52, objectFit: "contain" }} />
           </Link>
 
           <ul className="navbar-nav flex-row gap-2 me-auto ms-4 align-items-center">

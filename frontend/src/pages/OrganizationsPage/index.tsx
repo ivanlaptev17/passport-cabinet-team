@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   fetchOrganizations,
   updateOrganization,
+  exportOrganizationsXlsx,
   type Organization,
 } from "../../api/data";
 import Layout from "../../components/Layout";
@@ -94,18 +95,27 @@ export default function OrganizationsPage() {
     <Layout>
       <div className="row g-3">
         <div className="col-lg-9">
-          <div className="d-flex align-items-center gap-3 mb-3">
-            <button
-              className="btn btn-sm btn-outline-secondary"
-              onClick={() => navigate("/dashboard")}
-            >
-              <i className="fa fa-arrow-left me-1" />
-              Назад
-            </button>
-            <div>
-              <h5 className="mb-0 fw-semibold">Организации</h5>
-              <small className="text-muted">Материально-техническая база</small>
+          <div className="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+            <div className="d-flex align-items-center gap-3">
+              <button
+                className="btn btn-sm btn-outline-secondary"
+                onClick={() => navigate("/dashboard")}
+              >
+                <i className="fa fa-arrow-left me-1" />
+                Назад
+              </button>
+              <div>
+                <h5 className="mb-0 fw-semibold">Организации</h5>
+                <small className="text-muted">Материально-техническая база</small>
+              </div>
             </div>
+            <button
+              className="btn btn-sm btn-outline-success"
+              onClick={() => void exportOrganizationsXlsx()}
+            >
+              <i className="fa fa-file-excel me-1" />
+              Скачать xlsx
+            </button>
           </div>
 
           <div className="mb-3">
