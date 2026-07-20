@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "../../components/Layout";
+import { useAuth } from "../../contexts/AuthContext";
 import {
   fetchFinanceSummary,
   fetchIncidentsWidget,
@@ -330,9 +331,11 @@ function formatWidgetDate(value: string) {
 function IncidentsWidget({
   items,
   onOpen,
+  highlightUnassigned,
 }: {
   items: IncidentWidgetItem[] | null;
   onOpen: () => void;
+  highlightUnassigned: boolean;
 }) {
   return (
     <div
@@ -397,12 +400,18 @@ function IncidentsWidget({
             {items.map((item) => {
               const sev = severityMeta(item.severity);
               const stat = statusMeta(item.status);
+              const unassigned =
+                highlightUnassigned && item.status !== "RESOLVED" && !item.has_assignees;
 
               return (
                 <div
                   key={item.id}
                   className="rounded-4 px-3 py-3 incident-widget-row"
-                  style={{ background: "#f8fafb", border: "1px solid #eef1f4" }}
+                  style={{
+                    background: unassigned ? "#fff5f5" : "#f8fafb",
+                    border: unassigned ? "1px solid #f5c2c7" : "1px solid #eef1f4",
+                    borderLeft: unassigned ? "3px solid #dc3545" : undefined,
+                  }}
                 >
                   <div className="d-flex justify-content-between align-items-start gap-2 mb-2">
                     <div style={{ minWidth: 0 }}>
@@ -435,16 +444,26 @@ function IncidentsWidget({
                   </div>
 
                   <div className="d-flex justify-content-between align-items-center">
-                    <div
-                      className="rounded-pill px-2 py-1"
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        color: stat.color,
-                        background: stat.bg,
-                      }}
-                    >
-                      {statusLabel(item.status)}
+                    <div className="d-flex align-items-center gap-1">
+                      <div
+                        className="rounded-pill px-2 py-1"
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: stat.color,
+                          background: stat.bg,
+                        }}
+                      >
+                        {statusLabel(item.status)}
+                      </div>
+                      {unassigned && (
+                        <div
+                          className="rounded-pill px-2 py-1"
+                          style={{ fontSize: 10, fontWeight: 700, color: "#dc3545", background: "#fdecef" }}
+                        >
+                          Не назначен
+                        </div>
+                      )}
                     </div>
 
                     <div className="text-muted" style={{ fontSize: 11 }}>
@@ -532,6 +551,8 @@ function CalendarWidget({ events, onOpen }: { events: CalendarEvent[] | null; on
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isDirector = user?.role_code === "DIRECTOR" || user?.role_code === "ADMIN";
   const [summary, setSummary] = useState<FinanceSummary | null>(null);
   const [incidents, setIncidents] = useState<IncidentWidgetItem[] | null>(null);
   const [upcomingEvents, setUpcomingEvents] = useState<CalendarEvent[] | null>(null);
@@ -729,6 +750,7 @@ export default function DashboardPage() {
             <IncidentsWidget
               items={incidents}
               onOpen={() => navigate("/incidents")}
+              highlightUnassigned={isDirector}
             />
           </div>
         </div>

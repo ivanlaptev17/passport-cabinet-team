@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   fetchDocumentTemplates,
@@ -6,6 +6,7 @@ import {
   type DocumentTemplate,
 } from "../../api/data";
 import Layout from "../../components/Layout";
+import DateField from "../../components/DateField";
 
 type ListItem = Record<string, string>;
 type FormValues = Record<string, string | ListItem[]>;
@@ -52,7 +53,9 @@ export default function DocumentTemplatesPage() {
 
   const [activeTemplate, setActiveTemplate] = useState<DocumentTemplate | null>(null);
   const [values, setValues] = useState<FormValues>({});
+  const [logoFile, setLogoFile] = useState<File | null>(null);
   const [generating, setGenerating] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchDocumentTemplates()
@@ -67,6 +70,8 @@ export default function DocumentTemplatesPage() {
   const openTemplate = (template: DocumentTemplate) => {
     setActiveTemplate(template);
     setValues(buildInitialValues(template));
+    setLogoFile(null);
+    if (logoInputRef.current) logoInputRef.current.value = "";
   };
 
   const closeTemplate = () => setActiveTemplate(null);
@@ -106,7 +111,7 @@ export default function DocumentTemplatesPage() {
     setGenerating(true);
     try {
       const payload = prepareValues(activeTemplate, values);
-      const blob = await generateDocumentTemplate(activeTemplate.id, payload);
+      const blob = await generateDocumentTemplate(activeTemplate.id, payload, logoFile);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -197,6 +202,22 @@ export default function DocumentTemplatesPage() {
 
               <div className="modal-body">
                 <div className="row g-3">
+                  <div className="col-12">
+                    <label className="form-label small fw-semibold">
+                      Логотип школы (необязательно)
+                    </label>
+                    <input
+                      ref={logoInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg"
+                      className="form-control"
+                      onChange={(e) => setLogoFile(e.target.files?.[0] ?? null)}
+                    />
+                    <div className="form-text">
+                      PNG или JPG. Будет вставлен в шапку документа. Черновой вариант — пробуем на ВКС.
+                    </div>
+                  </div>
+
                   {activeTemplate.fields.map((field) => {
                     if (field.type === "text") {
                       return (
@@ -216,11 +237,9 @@ export default function DocumentTemplatesPage() {
                       return (
                         <div className="col-md-6" key={field.key}>
                           <label className="form-label small fw-semibold">{field.label}</label>
-                          <input
-                            type="date"
-                            className="form-control"
+                          <DateField
                             value={(values[field.key] as string) ?? ""}
-                            onChange={(e) => setScalarValue(field.key, e.target.value)}
+                            onChange={(iso) => setScalarValue(field.key, iso)}
                           />
                         </div>
                       );

@@ -57,19 +57,20 @@ export default function NotificationBell() {
     setData((prev) => {
       if (!prev) return prev;
       const incidents = itemType === "incident" ? prev.incidents.filter((x) => x.id !== itemId) : prev.incidents;
+      const assigned_incidents = itemType === "incident_assignment" ? prev.assigned_incidents.filter((x) => x.id !== itemId) : prev.assigned_incidents;
       const overdue_documents = itemType === "document" ? prev.overdue_documents.filter((x) => x.id !== itemId) : prev.overdue_documents;
       const today_events = itemType === "event" ? prev.today_events.filter((x) => x.id !== itemId) : prev.today_events;
       const upcoming_events = itemType === "event" ? prev.upcoming_events.filter((x) => x.id !== itemId) : prev.upcoming_events;
       return {
-        incidents, overdue_documents, today_events, upcoming_events,
-        total: incidents.length + overdue_documents.length + today_events.length + upcoming_events.length,
+        incidents, assigned_incidents, overdue_documents, today_events, upcoming_events,
+        total: incidents.length + assigned_incidents.length + overdue_documents.length + today_events.length + upcoming_events.length,
       };
     });
   };
 
   const dismissAll = async () => {
     await markAllNotificationsRead();
-    setData({ total: 0, incidents: [], overdue_documents: [], today_events: [], upcoming_events: [] });
+    setData({ total: 0, incidents: [], assigned_incidents: [], overdue_documents: [], today_events: [], upcoming_events: [] });
   };
 
   useEffect(() => {
@@ -144,6 +145,33 @@ export default function NotificationBell() {
                 <i className="fa fa-circle-check text-success d-block mb-2" style={{ fontSize: 22 }} />
                 Всё в порядке
               </div>
+            )}
+
+            {/* Assigned to me */}
+            {(data?.assigned_incidents?.length ?? 0) > 0 && (
+              <>
+                <SectionHeader icon="fa-user-check" label="Назначено вам" color="#0d6efd" />
+                {data!.assigned_incidents.map((inc) => (
+                  <NotifRow key={`assigned-${inc.id}`} onClick={() => go(`/incidents?highlight=${inc.id}`)}
+                    onDismiss={() => void dismiss("incident_assignment", inc.id)}>
+                    <span
+                      style={{
+                        width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
+                        background: SEVERITY_DOT[inc.severity] ?? "#888",
+                        display: "inline-block", marginTop: 4,
+                      }}
+                    />
+                    <div>
+                      <div className="fw-semibold text-dark" style={{ fontSize: 13 }}>{inc.title}</div>
+                      <div className="text-muted" style={{ fontSize: 11 }}>
+                        {SEVERITY_LABEL[inc.severity] ?? inc.severity}
+                        {" · "}
+                        {inc.status === "OPEN" ? "Открыт" : "В работе"}
+                      </div>
+                    </div>
+                  </NotifRow>
+                ))}
+              </>
             )}
 
             {/* Incidents */}

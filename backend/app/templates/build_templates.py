@@ -14,6 +14,10 @@ OUT_DIR = Path(__file__).parent
 def build_position_certificate():
     doc = Document()
 
+    logo_p = doc.add_paragraph()
+    logo_p.alignment = 1  # center
+    logo_p.add_run("{{ logo }}")
+
     title = doc.add_heading("СПРАВКА", level=1)
     title.alignment = 1  # center
 
@@ -43,6 +47,10 @@ def build_position_certificate():
 
 def build_responsible_order():
     doc = Document()
+
+    logo_p = doc.add_paragraph()
+    logo_p.alignment = 1  # center
+    logo_p.add_run("{{ logo }}")
 
     title = doc.add_heading("ПРИКАЗ № {{ order_number }}", level=1)
     title.alignment = 1  # center

@@ -96,6 +96,21 @@ export default function Layout({ children }: Props) {
             <img src="/logo-white.svg" alt="ИЦТО" style={{ height: 52, objectFit: "contain" }} />
           </Link>
 
+          {profile?.organization_name && (
+            <div
+              className="d-none d-lg-flex align-items-center ms-3 ps-3"
+              style={{ borderLeft: "1px solid rgba(255,255,255,0.25)", maxWidth: 220 }}
+              title={profile.organization_name}
+            >
+              <span
+                className="text-truncate"
+                style={{ color: "rgba(255,255,255,0.85)", fontSize: 13, fontWeight: 600 }}
+              >
+                {profile.organization_name}
+              </span>
+            </div>
+          )}
+
           <ul className="navbar-nav flex-row gap-2 me-auto ms-4 align-items-center">
             <li className="nav-item">
               <Link

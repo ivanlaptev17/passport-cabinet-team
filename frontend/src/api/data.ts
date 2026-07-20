@@ -23,6 +23,20 @@ export type Profile = {
   organization_name: string | null;
 };
 
+/** asyncpg возвращает jsonb-агрегаты как JSON-строку — приводим к массиву единообразно. */
+export function parseJsonArray<T>(value: T[] | string | null | undefined): T[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 export type Position = {
   id: number;
   name: string;
@@ -62,6 +76,18 @@ export type Building = {
   organization: string;
 };
 
+export type IncidentPerson = {
+  id: number;
+  last_name: string | null;
+  first_name: string | null;
+};
+
+export type IncidentProblemType = {
+  id: number;
+  name: string;
+  code: string;
+};
+
 export type Incident = {
   id: number;
   organization_id: number;
@@ -71,9 +97,14 @@ export type Incident = {
   status: string;
   severity: string;
   incident_date: string;
+  due_at: string | null;
   created_by_user_id: number | null;
+  creator_last_name: string | null;
+  creator_first_name: string | null;
   created_at: string;
   updated_at: string;
+  assignees: IncidentPerson[] | string;
+  problem_types: IncidentProblemType[] | string;
 };
 
 export type IncidentWidgetItem = {
@@ -84,6 +115,7 @@ export type IncidentWidgetItem = {
   status: string;
   severity: string;
   incident_date: string;
+  has_assignees: boolean;
 };
 
 export type IncidentCreate = {
@@ -93,6 +125,8 @@ export type IncidentCreate = {
   status?: string;
   severity?: string;
   incident_date?: string;
+  due_at?: string;
+  problem_type_ids?: number[];
 };
 
 export type IncidentUpdate = {
@@ -101,6 +135,8 @@ export type IncidentUpdate = {
   status?: string;
   severity?: string;
   incident_date?: string;
+  due_at?: string;
+  problem_type_ids?: number[];
 };
 
 // ── Fetchers ──────────────────────────────────────────────────────────────────
@@ -249,6 +285,15 @@ export const deleteIncident = (id: number) =>
   apiFetch<{ ok: boolean }>(`/data/incidents/${id}`, {
     method: "DELETE",
   });
+
+export const fetchIncidentProblemTypes = () =>
+  apiFetch<IncidentProblemType[]>("/data/incident-problem-types");
+
+export const setIncidentAssignees = (id: number, userIds: number[]) =>
+  apiFetch<Incident>(`/data/incidents/${id}/assignees`, {
+    method: "PUT",
+    body: JSON.stringify({ user_ids: userIds }),
+  });
 // ── Events / Calendar ─────────────────────────────────────────────────────────
 
 export type EventParticipant = {
@@ -315,7 +360,6 @@ export type Document = {
   organization: string;
   name: string;
   description: string | null;
-  status: string;
   original_filename: string;
   file_size: number | null;
   uploaded_at: string;
@@ -340,7 +384,7 @@ export const uploadDocument = (formData: FormData) => {
   });
 };
 
-export const updateDocument = (id: number, body: { name?: string; description?: string; status?: string }) =>
+export const updateDocument = (id: number, body: { name?: string; description?: string }) =>
   apiFetch<Document>(`/data/documents/${id}`, { method: "PUT", body: JSON.stringify(body) });
 
 export const deleteDocument = (id: number) =>
@@ -351,6 +395,7 @@ export const deleteDocument = (id: number) =>
 export type Notifications = {
   total: number;
   incidents: { id: number; title: string; severity: string; status: string }[];
+  assigned_incidents: { id: number; title: string; severity: string; status: string }[];
   overdue_documents: { id: number; name: string; uploaded_at: string }[];
   today_events: { id: number; title: string; starts_at: string }[];
   upcoming_events: { id: number; title: string; starts_at: string }[];
@@ -423,13 +468,16 @@ export const fetchDocumentTemplates = () =>
 export const generateDocumentTemplate = async (
   id: string,
   values: Record<string, unknown>,
+  logo?: File | null,
 ): Promise<Blob> => {
   const API_URL = (import.meta.env.VITE_API_URL as string) ?? "http://localhost:8000";
+  const fd = new FormData();
+  fd.append("values", JSON.stringify(values));
+  if (logo) fd.append("logo", logo);
   const res = await fetch(`${API_URL}/data/document-templates/${id}/generate`, {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ values }),
+    body: fd,
   });
   if (!res.ok) throw new Error(`${res.status}`);
   return res.blob();

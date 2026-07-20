@@ -6,6 +6,7 @@ import {
 } from "../../api/data";
 import { useAuth } from "../../contexts/AuthContext";
 import Layout from "../../components/Layout";
+import DateField from "../../components/DateField";
 
 const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 const MONTHS = ["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
@@ -406,8 +407,8 @@ export default function CalendarPage() {
                   {/* Start date + time */}
                   <div className="col-md-7">
                     <label className="form-label small fw-semibold">Дата начала *</label>
-                    <input type="date" className="form-control" value={form.start_date}
-                      onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))} />
+                    <DateField value={form.start_date}
+                      onChange={(iso) => setForm((f) => ({ ...f, start_date: iso }))} />
                   </div>
                   <div className="col-md-5">
                     <label className="form-label small fw-semibold">Время начала *</label>
@@ -418,10 +419,10 @@ export default function CalendarPage() {
                   {/* End date + time */}
                   <div className="col-md-7">
                     <label className="form-label small fw-semibold">Дата окончания</label>
-                    <input type="date"
+                    <DateField
                       className={`form-control${isEndBeforeStart ? " is-invalid" : ""}`}
                       value={form.end_date}
-                      onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))} />
+                      onChange={(iso) => setForm((f) => ({ ...f, end_date: iso }))} />
                   </div>
                   <div className="col-md-5">
                     <label className="form-label small fw-semibold">Время окончания</label>

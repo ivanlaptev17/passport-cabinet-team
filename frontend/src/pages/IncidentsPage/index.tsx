@@ -4,13 +4,21 @@ import {
   createIncident,
   deleteIncident,
   exportIncidentsXlsx,
+  fetchIncidentProblemTypes,
   fetchIncidents,
   fetchOrganizations,
-  type Incident,
-  type Organization,
+  fetchOrgUsers,
+  parseJsonArray,
+  setIncidentAssignees,
   updateIncident,
+  type Incident,
+  type IncidentPerson,
+  type IncidentProblemType,
+  type Organization,
+  type OrgUser,
 } from "../../api/data";
 import Layout from "../../components/Layout";
+import DateField from "../../components/DateField";
 import { useAuth } from "../../contexts/AuthContext";
 
 type IncidentForm = {
@@ -20,6 +28,9 @@ type IncidentForm = {
   status: string;
   severity: string;
   incident_date: string;
+  due_date: string;
+  due_time: string;
+  problem_type_ids: number[];
 };
 
 const emptyForm: IncidentForm = {
@@ -29,6 +40,9 @@ const emptyForm: IncidentForm = {
   status: "OPEN",
   severity: "MEDIUM",
   incident_date: new Date().toISOString().slice(0, 10),
+  due_date: "",
+  due_time: "",
+  problem_type_ids: [],
 };
 
 function statusLabel(status: string) {
@@ -87,9 +101,40 @@ function formatDate(value: string) {
   return new Date(value).toLocaleDateString("ru-RU");
 }
 
+function formatDueAt(value: string) {
+  const d = new Date(value);
+  const datePart = d.toLocaleDateString("ru-RU");
+  const timePart = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  return `${datePart} ${timePart}`;
+}
+
+function personName(p: IncidentPerson | OrgUser) {
+  return [p.last_name, p.first_name].filter(Boolean).join(" ") || "—";
+}
+
+function isoDateTimeToParts(iso: string | null): { date: string; time: string } {
+  if (!iso) return { date: "", time: "" };
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return {
+    date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+  };
+}
+
+function normalizeIncident(incident: Incident): Incident {
+  return {
+    ...incident,
+    assignees: parseJsonArray<IncidentPerson>(incident.assignees),
+    problem_types: parseJsonArray<IncidentProblemType>(incident.problem_types),
+  };
+}
+
 export default function IncidentsPage() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [problemTypes, setProblemTypes] = useState<IncidentProblemType[]>([]);
+  const [orgUsers, setOrgUsers] = useState<OrgUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
@@ -99,14 +144,18 @@ export default function IncidentsPage() {
   const [form, setForm] = useState<IncidentForm>(emptyForm);
   const [saving, setSaving] = useState(false);
 
+  const [assigneesFor, setAssigneesFor] = useState<Incident | null>(null);
+  const [assigneeSelection, setAssigneeSelection] = useState<number[]>([]);
+  const [savingAssignees, setSavingAssignees] = useState(false);
+
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const highlightId = Number(searchParams.get("highlight")) || null;
   const highlightRowRef = useRef<HTMLTableRowElement>(null);
   const { user } = useAuth();
 
-  const canManage = user?.role_code !== "MINOBR";
-  const canDelete = user?.role_code === "DIRECTOR" || user?.role_code === "ADMIN";
+  const isDirector = user?.role_code === "DIRECTOR" || user?.role_code === "ADMIN";
+  const canCreate = user?.role_code !== "MINOBR";
 
   useEffect(() => {
     if (highlightId && highlightRowRef.current) {
@@ -115,10 +164,17 @@ export default function IncidentsPage() {
   }, [highlightId, incidents]);
 
   useEffect(() => {
-    Promise.all([fetchIncidents(), fetchOrganizations()])
-      .then(([incidentsData, orgsData]) => {
-        setIncidents(incidentsData);
+    Promise.all([
+      fetchIncidents(),
+      fetchOrganizations(),
+      fetchIncidentProblemTypes(),
+      fetchOrgUsers(),
+    ])
+      .then(([incidentsData, orgsData, typesData, usersData]) => {
+        setIncidents(incidentsData.map(normalizeIncident));
         setOrganizations(orgsData);
+        setProblemTypes(typesData);
+        setOrgUsers(usersData);
       })
       .catch((e: Error) => {
         if (e.message === "401") navigate("/");
@@ -127,20 +183,37 @@ export default function IncidentsPage() {
       .finally(() => setLoading(false));
   }, [navigate]);
 
+  const incidentFlags = (incident: Incident) => {
+    const isCreator = incident.created_by_user_id === user?.id;
+    const assignees = parseJsonArray<IncidentPerson>(incident.assignees);
+    const isAssignee = assignees.some((a) => a.id === user?.id);
+    return {
+      canEditMeta: isDirector || isCreator,
+      canEditStatus: isDirector || isCreator || isAssignee,
+      canEditDueAt: isDirector,
+      canAssign: isDirector || isCreator,
+      canDelete: isDirector,
+      assignees,
+    };
+  };
+
   const filteredIncidents = useMemo(() => {
     const q = search.toLowerCase();
-    return incidents.filter(
-      (incident) =>
+    return incidents.filter((incident) => {
+      const types = parseJsonArray<IncidentProblemType>(incident.problem_types);
+      return (
         incident.title.toLowerCase().includes(q) ||
         (incident.description ?? "").toLowerCase().includes(q) ||
         incident.organization.toLowerCase().includes(q) ||
         statusLabel(incident.status).toLowerCase().includes(q) ||
-        severityLabel(incident.severity).toLowerCase().includes(q),
-    );
+        severityLabel(incident.severity).toLowerCase().includes(q) ||
+        types.some((t) => t.name.toLowerCase().includes(q))
+      );
+    });
   }, [incidents, search]);
 
   const openCreate = () => {
-    if (!canManage) return;
+    if (!canCreate) return;
     setEditing(null);
     setForm({
       ...emptyForm,
@@ -150,7 +223,7 @@ export default function IncidentsPage() {
   };
 
   const openEdit = (incident: Incident) => {
-    if (!canManage) return;
+    const { date, time } = isoDateTimeToParts(incident.due_at);
     setEditing(incident);
     setForm({
       organization_id: String(incident.organization_id),
@@ -159,6 +232,9 @@ export default function IncidentsPage() {
       status: incident.status,
       severity: incident.severity,
       incident_date: incident.incident_date,
+      due_date: date,
+      due_time: time,
+      problem_type_ids: parseJsonArray<IncidentProblemType>(incident.problem_types).map((t) => t.id),
     });
     setModalOpen(true);
   };
@@ -169,13 +245,22 @@ export default function IncidentsPage() {
     setForm(emptyForm);
   };
 
-  const saveIncident = async () => {
-    if (!canManage) return;
+  const toggleProblemType = (id: number) => {
+    setForm((prev) => ({
+      ...prev,
+      problem_type_ids: prev.problem_type_ids.includes(id)
+        ? prev.problem_type_ids.filter((t) => t !== id)
+        : [...prev.problem_type_ids, id],
+    }));
+  };
 
+  const saveIncident = async () => {
     if (!form.organization_id || !form.title.trim()) {
       alert("Заполните организацию и заголовок");
       return;
     }
+
+    const due_at = form.due_date ? `${form.due_date}T${form.due_time || "00:00"}:00` : undefined;
 
     setSaving(true);
     try {
@@ -186,11 +271,12 @@ export default function IncidentsPage() {
           status: form.status,
           severity: form.severity,
           incident_date: form.incident_date,
+          due_at,
+          problem_type_ids: form.problem_type_ids,
         });
 
-        setIncidents((prev) =>
-          prev.map((item) => (item.id === updated.id ? updated : item)),
-        );
+        const normalized = normalizeIncident(updated);
+        setIncidents((prev) => prev.map((item) => (item.id === normalized.id ? normalized : item)));
       } else {
         const created = await createIncident({
           organization_id: Number(form.organization_id),
@@ -199,15 +285,15 @@ export default function IncidentsPage() {
           status: form.status,
           severity: form.severity,
           incident_date: form.incident_date,
+          due_at,
+          problem_type_ids: form.problem_type_ids,
         });
 
         const orgName =
           organizations.find((o) => o.id === created.organization_id)?.name ?? "";
 
-        setIncidents((prev) => [
-          { ...created, organization: created.organization || orgName },
-          ...prev,
-        ]);
+        const normalized = normalizeIncident({ ...created, organization: created.organization || orgName });
+        setIncidents((prev) => [normalized, ...prev]);
       }
 
       closeModal();
@@ -219,8 +305,6 @@ export default function IncidentsPage() {
   };
 
   const removeIncident = async (incident: Incident) => {
-    if (!canManage) return;
-
     const ok = window.confirm(`Удалить инцидент "${incident.title}"?`);
     if (!ok) return;
 
@@ -229,6 +313,34 @@ export default function IncidentsPage() {
       setIncidents((prev) => prev.filter((item) => item.id !== incident.id));
     } catch {
       alert("Ошибка при удалении инцидента");
+    }
+  };
+
+  const openAssignees = (incident: Incident) => {
+    setAssigneesFor(incident);
+    setAssigneeSelection(parseJsonArray<IncidentPerson>(incident.assignees).map((a) => a.id));
+  };
+
+  const closeAssignees = () => setAssigneesFor(null);
+
+  const toggleAssignee = (uid: number) => {
+    setAssigneeSelection((prev) =>
+      prev.includes(uid) ? prev.filter((id) => id !== uid) : [...prev, uid],
+    );
+  };
+
+  const saveAssignees = async () => {
+    if (!assigneesFor) return;
+    setSavingAssignees(true);
+    try {
+      const updated = await setIncidentAssignees(assigneesFor.id, assigneeSelection);
+      const normalized = normalizeIncident(updated);
+      setIncidents((prev) => prev.map((item) => (item.id === normalized.id ? normalized : item)));
+      closeAssignees();
+    } catch {
+      alert("Ошибка при назначении исполнителей");
+    } finally {
+      setSavingAssignees(false);
     }
   };
 
@@ -261,7 +373,7 @@ export default function IncidentsPage() {
                 <i className="fa fa-file-excel me-1" />
                 Скачать xlsx
               </button>
-              {canManage && (
+              {canCreate && (
                 <button
                   className="btn btn-sm text-white border-0 px-3 py-2 rounded-pill shadow-sm"
                   style={{
@@ -299,7 +411,7 @@ export default function IncidentsPage() {
             <>
               <div className="text-muted small mb-2">
                 <span className="fw-semibold">{filteredIncidents.length}</span> —
-                всего
+                всего · отсортированы по статусу и важности
               </div>
 
               <div className="card shadow-sm">
@@ -310,75 +422,117 @@ export default function IncidentsPage() {
                         <th style={{ width: 60 }}>ID</th>
                         <th>Организация</th>
                         <th>Заголовок</th>
-                        <th>Описание</th>
+                        <th>Типы</th>
                         <th>Статус</th>
                         <th>Важность</th>
                         <th>Дата</th>
-                        {canManage && (
-                          <th style={{ width: 110 }} className="text-center">
-                            Действия
-                          </th>
-                        )}
+                        <th>Срок</th>
+                        <th>Исполнители</th>
+                        <th style={{ width: 130 }} className="text-center">
+                          Действия
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredIncidents.length === 0 ? (
                         <tr>
-                          <td
-                            colSpan={canManage ? 8 : 7}
-                            className="text-center text-muted py-4"
-                          >
+                          <td colSpan={10} className="text-center text-muted py-4">
                             Данные отсутствуют
                           </td>
                         </tr>
                       ) : (
-                        filteredIncidents.map((incident) => (
-                          <tr
-                            key={incident.id}
-                            ref={incident.id === highlightId ? highlightRowRef : null}
-                            style={incident.id === highlightId
-                              ? { background: "#fff3cd", transition: "background 0.5s" }
-                              : undefined}
-                          >
-                            <td className="text-muted small">{incident.id}</td>
-                            <td>{incident.organization}</td>
-                            <td>
-                              <strong>{incident.title}</strong>
-                            </td>
-                            <td style={{ minWidth: 260 }}>
-                              {incident.description ?? "—"}
-                            </td>
-                            <td>
-                              <span
-                                className={`badge text-bg-${statusBadgeClass(
-                                  incident.status,
-                                )}`}
-                              >
-                                {statusLabel(incident.status)}
-                              </span>
-                            </td>
-                            <td>
-                              <span
-                                className={`badge text-bg-${severityBadgeClass(
-                                  incident.severity,
-                                )}`}
-                              >
-                                {severityLabel(incident.severity)}
-                              </span>
-                            </td>
-                            <td>{formatDate(incident.incident_date)}</td>
+                        filteredIncidents.map((incident) => {
+                          const flags = incidentFlags(incident);
+                          const types = parseJsonArray<IncidentProblemType>(incident.problem_types);
+                          const unassigned = incident.status !== "RESOLVED" && flags.assignees.length === 0;
 
-                            {canManage && (
+                          return (
+                            <tr
+                              key={incident.id}
+                              ref={incident.id === highlightId ? highlightRowRef : null}
+                              style={{
+                                background:
+                                  incident.id === highlightId
+                                    ? "#fff3cd"
+                                    : unassigned
+                                      ? "#fff5f5"
+                                      : undefined,
+                                borderLeft: unassigned ? "3px solid #dc3545" : undefined,
+                                transition: "background 0.5s",
+                              }}
+                            >
+                              <td className="text-muted small">{incident.id}</td>
+                              <td>{incident.organization}</td>
+                              <td style={{ minWidth: 200 }}>
+                                <strong>{incident.title}</strong>
+                                <div className="text-muted" style={{ fontSize: 11 }}>
+                                  {incident.description ?? ""}
+                                </div>
+                              </td>
+                              <td>
+                                {types.length === 0 ? (
+                                  <span className="text-muted">—</span>
+                                ) : (
+                                  types.map((t) => (
+                                    <span
+                                      key={t.id}
+                                      className="badge text-bg-light border me-1 mb-1"
+                                      style={{ fontSize: 11 }}
+                                    >
+                                      {t.name}
+                                    </span>
+                                  ))
+                                )}
+                              </td>
+                              <td>
+                                <span className={`badge text-bg-${statusBadgeClass(incident.status)}`}>
+                                  {statusLabel(incident.status)}
+                                </span>
+                              </td>
+                              <td>
+                                <span className={`badge text-bg-${severityBadgeClass(incident.severity)}`}>
+                                  {severityLabel(incident.severity)}
+                                </span>
+                              </td>
+                              <td style={{ whiteSpace: "nowrap" }}>{formatDate(incident.incident_date)}</td>
+                              <td style={{ whiteSpace: "nowrap" }}>
+                                {incident.due_at ? formatDueAt(incident.due_at) : "—"}
+                              </td>
+                              <td style={{ minWidth: 140 }}>
+                                {flags.assignees.length === 0 ? (
+                                  <span className="badge text-bg-danger-subtle text-danger border border-danger-subtle">
+                                    Не назначен
+                                  </span>
+                                ) : (
+                                  flags.assignees.map((a) => (
+                                    <div key={a.id} style={{ fontSize: 12 }}>
+                                      {personName(a)}
+                                    </div>
+                                  ))
+                                )}
+                              </td>
+
                               <td className="text-center">
                                 <div className="d-flex justify-content-center gap-2">
-                                  <button
-                                    className="btn btn-sm btn-outline-secondary py-0 px-2"
-                                    title="Редактировать"
-                                    onClick={() => openEdit(incident)}
-                                  >
-                                    <i className="fa fa-pencil" />
-                                  </button>
-                                  {canDelete && (
+                                  {(flags.canEditMeta || flags.canEditStatus) && (
+                                    <button
+                                      className="btn btn-sm btn-outline-secondary py-0 px-2"
+                                      title="Редактировать"
+                                      onClick={() => openEdit(incident)}
+                                    >
+                                      <i className="fa fa-pencil" />
+                                    </button>
+                                  )}
+                                  {flags.canAssign && (
+                                    <button
+                                      className="btn btn-sm btn-outline-primary py-0 px-2"
+                                      title="Назначить исполнителей"
+                                      onClick={() => openAssignees(incident)}
+                                    >
+                                      <i className="fa fa-user-check" />
+                                    </button>
+                                  )}
+                                  {flags.canDelete && (
                                     <button
                                       className="btn btn-sm btn-outline-danger py-0 px-2"
                                       title="Удалить"
@@ -389,9 +543,9 @@ export default function IncidentsPage() {
                                   )}
                                 </div>
                               </td>
-                            )}
-                          </tr>
-                        ))
+                            </tr>
+                          );
+                        })
                       )}
                     </tbody>
                   </table>
@@ -402,7 +556,8 @@ export default function IncidentsPage() {
         </div>
       </div>
 
-      {canManage && modalOpen && (
+      {/* Create / edit modal */}
+      {modalOpen && (
         <div
           className="modal show d-block"
           style={{ background: "rgba(0,0,0,0.45)" }}
@@ -426,109 +581,172 @@ export default function IncidentsPage() {
               </div>
 
               <div className="modal-body">
-                <div className="row g-3">
-                  <div className="col-md-4">
-                    <label className="form-label small fw-semibold">
-                      Организация
-                    </label>
-                    <select
-                      className="form-select"
-                      value={form.organization_id}
-                      disabled={!!editing}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          organization_id: e.target.value,
-                        }))
-                      }
-                    >
-                      <option value="">Выберите организацию</option>
-                      {organizations.map((org) => (
-                        <option key={org.id} value={org.id}>
-                          {org.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                {(() => {
+                  const flags = editing ? incidentFlags(editing) : {
+                    canEditMeta: true,
+                    canEditStatus: true,
+                    canEditDueAt: isDirector,
+                  };
+                  return (
+                    <div className="row g-3">
+                      <div className="col-md-4">
+                        <label className="form-label small fw-semibold">
+                          Организация
+                        </label>
+                        <select
+                          className="form-select"
+                          value={form.organization_id}
+                          disabled={!!editing}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              organization_id: e.target.value,
+                            }))
+                          }
+                        >
+                          <option value="">Выберите организацию</option>
+                          {organizations.map((org) => (
+                            <option key={org.id} value={org.id}>
+                              {org.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
 
-                  <div className="col-md-4">
-                    <label className="form-label small fw-semibold">Статус</label>
-                    <select
-                      className="form-select"
-                      value={form.status}
-                      onChange={(e) =>
-                        setForm((prev) => ({ ...prev, status: e.target.value }))
-                      }
-                    >
-                      <option value="OPEN">Открыт</option>
-                      <option value="IN_PROGRESS">В работе</option>
-                      <option value="RESOLVED">Решён</option>
-                    </select>
-                  </div>
+                      <div className="col-md-4">
+                        <label className="form-label small fw-semibold">Статус</label>
+                        <select
+                          className="form-select"
+                          value={form.status}
+                          disabled={!flags.canEditStatus}
+                          onChange={(e) =>
+                            setForm((prev) => ({ ...prev, status: e.target.value }))
+                          }
+                        >
+                          <option value="OPEN">Открыт</option>
+                          <option value="IN_PROGRESS">В работе</option>
+                          <option value="RESOLVED">Решён</option>
+                        </select>
+                      </div>
 
-                  <div className="col-md-4">
-                    <label className="form-label small fw-semibold">
-                      Важность
-                    </label>
-                    <select
-                      className="form-select"
-                      value={form.severity}
-                      onChange={(e) =>
-                        setForm((prev) => ({ ...prev, severity: e.target.value }))
-                      }
-                    >
-                      <option value="LOW">Низкий</option>
-                      <option value="MEDIUM">Средний</option>
-                      <option value="HIGH">Высокий</option>
-                    </select>
-                  </div>
+                      <div className="col-md-4">
+                        <label className="form-label small fw-semibold">
+                          Важность
+                        </label>
+                        <select
+                          className="form-select"
+                          value={form.severity}
+                          disabled={!flags.canEditMeta}
+                          onChange={(e) =>
+                            setForm((prev) => ({ ...prev, severity: e.target.value }))
+                          }
+                        >
+                          <option value="LOW">Низкий</option>
+                          <option value="MEDIUM">Средний</option>
+                          <option value="HIGH">Высокий</option>
+                        </select>
+                      </div>
 
-                  <div className="col-md-8">
-                    <label className="form-label small fw-semibold">
-                      Заголовок
-                    </label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={form.title}
-                      onChange={(e) =>
-                        setForm((prev) => ({ ...prev, title: e.target.value }))
-                      }
-                    />
-                  </div>
+                      <div className="col-md-8">
+                        <label className="form-label small fw-semibold">
+                          Заголовок
+                        </label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={form.title}
+                          disabled={!flags.canEditMeta}
+                          onChange={(e) =>
+                            setForm((prev) => ({ ...prev, title: e.target.value }))
+                          }
+                        />
+                      </div>
 
-                  <div className="col-md-4">
-                    <label className="form-label small fw-semibold">Дата</label>
-                    <input
-                      type="date"
-                      className="form-control"
-                      value={form.incident_date}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          incident_date: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
+                      <div className="col-md-4">
+                        <label className="form-label small fw-semibold">Дата</label>
+                        <DateField
+                          value={form.incident_date}
+                          disabled={!flags.canEditMeta}
+                          onChange={(iso) =>
+                            setForm((prev) => ({ ...prev, incident_date: iso }))
+                          }
+                        />
+                      </div>
 
-                  <div className="col-12">
-                    <label className="form-label small fw-semibold">
-                      Описание
-                    </label>
-                    <textarea
-                      className="form-control"
-                      rows={4}
-                      value={form.description}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          description: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
+                      <div className="col-12">
+                        <label className="form-label small fw-semibold">
+                          Описание
+                        </label>
+                        <textarea
+                          className="form-control"
+                          rows={3}
+                          value={form.description}
+                          disabled={!flags.canEditMeta}
+                          onChange={(e) =>
+                            setForm((prev) => ({
+                              ...prev,
+                              description: e.target.value,
+                            }))
+                          }
+                        />
+                      </div>
+
+                      <div className="col-12">
+                        <label className="form-label small fw-semibold">
+                          Тип проблемы
+                        </label>
+                        <div className="d-flex flex-wrap gap-2">
+                          {problemTypes.map((t) => {
+                            const checked = form.problem_type_ids.includes(t.id);
+                            return (
+                              <button
+                                type="button"
+                                key={t.id}
+                                disabled={!flags.canEditMeta}
+                                className={`btn btn-sm rounded-pill ${
+                                  checked ? "btn-secondary" : "btn-outline-secondary"
+                                }`}
+                                onClick={() => toggleProblemType(t.id)}
+                              >
+                                {checked && <i className="fa fa-check me-1" />}
+                                {t.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="col-12">
+                        <label className="form-label small fw-semibold">
+                          Срок исполнения
+                          {!flags.canEditDueAt && (
+                            <span className="text-muted fw-normal"> (устанавливает директор)</span>
+                          )}
+                        </label>
+                        <div className="row g-2">
+                          <div className="col-6">
+                            <DateField
+                              value={form.due_date}
+                              disabled={!flags.canEditDueAt}
+                              onChange={(iso) => setForm((prev) => ({ ...prev, due_date: iso }))}
+                            />
+                          </div>
+                          <div className="col-6">
+                            <input
+                              type="time"
+                              className="form-control"
+                              value={form.due_time}
+                              disabled={!flags.canEditDueAt}
+                              onChange={(e) =>
+                                setForm((prev) => ({ ...prev, due_time: e.target.value }))
+                              }
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               <div className="modal-footer">
@@ -544,6 +762,66 @@ export default function IncidentsPage() {
                   {saving && (
                     <span className="spinner-border spinner-border-sm me-1" />
                   )}
+                  Сохранить
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assignees modal */}
+      {assigneesFor && (
+        <div
+          className="modal show d-block"
+          style={{ background: "rgba(0,0,0,0.45)" }}
+          onClick={closeAssignees}
+        >
+          <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-content">
+              <div className="modal-header" style={{ background: "#37474f", color: "white" }}>
+                <h6 className="modal-title mb-0 fw-semibold">
+                  <i className="fa fa-user-check me-2" />
+                  Исполнители: {assigneesFor.title}
+                </h6>
+                <button type="button" className="btn-close btn-close-white" onClick={closeAssignees} />
+              </div>
+
+              <div className="modal-body">
+                {orgUsers.length === 0 ? (
+                  <div className="text-muted text-center py-3">Нет доступных сотрудников</div>
+                ) : (
+                  <div className="border rounded-3 p-2" style={{ maxHeight: 260, overflowY: "auto" }}>
+                    {orgUsers.map((u) => (
+                      <div key={u.id} className="form-check mb-1">
+                        <input
+                          type="checkbox"
+                          className="form-check-input"
+                          id={`assignee-${u.id}`}
+                          checked={assigneeSelection.includes(u.id)}
+                          onChange={() => toggleAssignee(u.id)}
+                        />
+                        <label className="form-check-label" htmlFor={`assignee-${u.id}`} style={{ fontSize: 13 }}>
+                          {personName(u)}
+                          <span className="text-muted ms-1" style={{ fontSize: 11 }}>{u.email}</span>
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="modal-footer">
+                <button className="btn btn-secondary btn-sm" onClick={closeAssignees}>
+                  Отмена
+                </button>
+                <button
+                  className="btn btn-sm text-white"
+                  style={{ background: "#37474f" }}
+                  disabled={savingAssignees}
+                  onClick={() => void saveAssignees()}
+                >
+                  {savingAssignees && <span className="spinner-border spinner-border-sm me-1" />}
                   Сохранить
                 </button>
               </div>

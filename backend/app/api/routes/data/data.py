@@ -44,6 +44,8 @@ class IncidentCreate(BaseModel):
     status: str = "OPEN"
     severity: str = "MEDIUM"
     incident_date: Optional[date] = None
+    due_at: Optional[datetime] = None
+    problem_type_ids: List[int] = []
 
 
 class IncidentUpdate(BaseModel):
@@ -52,6 +54,12 @@ class IncidentUpdate(BaseModel):
     status: Optional[str] = None
     severity: Optional[str] = None
     incident_date: Optional[date] = None
+    due_at: Optional[datetime] = None
+    problem_type_ids: Optional[List[int]] = None
+
+
+class IncidentAssigneesUpdate(BaseModel):
+    user_ids: List[int] = []
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -399,6 +407,75 @@ async def list_education(
     )
     return [dict(r) for r in rows]
 
+_INCIDENT_STATUS_ORDER = "CASE i.status WHEN 'OPEN' THEN 0 WHEN 'IN_PROGRESS' THEN 1 WHEN 'RESOLVED' THEN 2 ELSE 3 END"
+_INCIDENT_SEVERITY_ORDER = "CASE i.severity WHEN 'HIGH' THEN 0 WHEN 'MEDIUM' THEN 1 WHEN 'LOW' THEN 2 ELSE 3 END"
+
+_INCIDENT_SELECT = """
+    SELECT
+        i.id,
+        i.organization_id,
+        o.name AS organization,
+        i.title,
+        i.description,
+        i.status,
+        i.severity,
+        i.incident_date,
+        i.due_at,
+        i.created_by_user_id,
+        cu.last_name AS creator_last_name,
+        cu.first_name AS creator_first_name,
+        i.created_at,
+        i.updated_at,
+        COALESCE(
+            jsonb_agg(DISTINCT jsonb_build_object('id', au.id, 'last_name', au.last_name, 'first_name', au.first_name))
+            FILTER (WHERE au.id IS NOT NULL),
+            '[]'
+        ) AS assignees,
+        COALESCE(
+            jsonb_agg(DISTINCT jsonb_build_object('id', pt.id, 'name', pt.name, 'code', pt.code))
+            FILTER (WHERE pt.id IS NOT NULL),
+            '[]'
+        ) AS problem_types
+    FROM incidents i
+    JOIN organizations o ON o.id = i.organization_id
+    LEFT JOIN users cu ON cu.id = i.created_by_user_id
+    LEFT JOIN incident_assignees ia ON ia.incident_id = i.id
+    LEFT JOIN users au ON au.id = ia.user_id
+    LEFT JOIN incident_type_links itl ON itl.incident_id = i.id
+    LEFT JOIN incident_problem_types pt ON pt.id = itl.problem_type_id
+"""
+_INCIDENT_GROUP_BY = "GROUP BY i.id, o.name, cu.last_name, cu.first_name"
+
+
+async def _incident_membership_flags(current_user: dict, organization_id: int, incident_id: int | None, created_by_user_id: int | None, conn):
+    """Возвращает (is_director, is_creator, is_assignee) для проверки прав на инцидент."""
+    membership = await require_org_write_access(
+        current_user, organization_id, conn,
+        allowed_org_roles=("DIRECTOR", "STAFF"),
+    )
+    is_director = membership is None or membership["org_role_code"] == "DIRECTOR"
+    is_creator = created_by_user_id is not None and current_user["id"] == created_by_user_id
+    is_assignee = False
+    if incident_id is not None:
+        row = await conn.fetchrow(
+            "SELECT 1 FROM incident_assignees WHERE incident_id = $1 AND user_id = $2",
+            incident_id, current_user["id"],
+        )
+        is_assignee = row is not None
+    return is_director, is_creator, is_assignee
+
+
+@router.get("/incident-problem-types")
+async def list_incident_problem_types(
+    _current_user=Depends(get_current_user),
+    conn=Depends(get_connection),
+):
+    rows = await conn.fetch(
+        "SELECT id, name, code FROM incident_problem_types ORDER BY name"
+    )
+    return [dict(r) for r in rows]
+
+
 @router.get("/incidents")
 async def list_incidents(
     current_user=Depends(get_current_user),
@@ -406,23 +483,11 @@ async def list_incidents(
 ):
     allowed = await _org_ids_filter(current_user, conn)
     rows = await conn.fetch(
-        """
-        SELECT
-            i.id,
-            i.organization_id,
-            o.name AS organization,
-            i.title,
-            i.description,
-            i.status,
-            i.severity,
-            i.incident_date,
-            i.created_by_user_id,
-            i.created_at,
-            i.updated_at
-        FROM incidents i
-        JOIN organizations o ON o.id = i.organization_id
+        f"""
+        {_INCIDENT_SELECT}
         WHERE ($1::bigint[] IS NULL OR i.organization_id = ANY($1))
-        ORDER BY i.incident_date DESC, i.id DESC
+        {_INCIDENT_GROUP_BY}
+        ORDER BY {_INCIDENT_STATUS_ORDER}, {_INCIDENT_SEVERITY_ORDER}, i.incident_date DESC, i.id DESC
         """,
         allowed,
     )
@@ -435,7 +500,7 @@ async def incidents_widget(
 ):
     allowed = await _org_ids_filter(current_user, conn)
     rows = await conn.fetch(
-        """
+        f"""
         SELECT
             i.id,
             i.organization_id,
@@ -443,11 +508,12 @@ async def incidents_widget(
             i.title,
             i.status,
             i.severity,
-            i.incident_date
+            i.incident_date,
+            EXISTS (SELECT 1 FROM incident_assignees ia WHERE ia.incident_id = i.id) AS has_assignees
         FROM incidents i
         JOIN organizations o ON o.id = i.organization_id
         WHERE ($1::bigint[] IS NULL OR i.organization_id = ANY($1))
-        ORDER BY i.incident_date DESC, i.id DESC
+        ORDER BY {_INCIDENT_STATUS_ORDER}, {_INCIDENT_SEVERITY_ORDER}, i.incident_date DESC, i.id DESC
         LIMIT 5
         """,
         allowed,
@@ -460,12 +526,12 @@ async def create_incident(
     current_user=Depends(get_current_user),
     conn=Depends(get_connection),
 ):
-    await require_org_write_access(
-        current_user,
-        payload.organization_id,
-        conn,
-        allowed_org_roles=("DIRECTOR", "STAFF"),
+    is_director, _, _ = await _incident_membership_flags(
+        current_user, payload.organization_id, None, None, conn,
     )
+
+    # Срок исполнения устанавливает только директор
+    due_at = _naive(payload.due_at) if (is_director and payload.due_at) else None
 
     row = await conn.fetchrow(
         """
@@ -476,24 +542,16 @@ async def create_incident(
             status,
             severity,
             incident_date,
+            due_at,
             created_by_user_id
         )
         VALUES (
             $1, $2, $3, $4, $5,
             COALESCE($6::date, CURRENT_DATE),
-            $7
+            $7,
+            $8
         )
-        RETURNING
-            id,
-            organization_id,
-            title,
-            description,
-            status,
-            severity,
-            incident_date,
-            created_by_user_id,
-            created_at,
-            updated_at
+        RETURNING id
         """,
         payload.organization_id,
         payload.title,
@@ -501,9 +559,22 @@ async def create_incident(
         payload.status,
         payload.severity,
         payload.incident_date,
+        due_at,
         current_user["id"],
     )
-    return dict(row)
+    incident_id = row["id"]
+
+    if payload.problem_type_ids:
+        await conn.executemany(
+            "INSERT INTO incident_type_links (incident_id, problem_type_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            [(incident_id, tid) for tid in payload.problem_type_ids],
+        )
+
+    result = await conn.fetchrow(
+        f"{_INCIDENT_SELECT} WHERE i.id = $1 {_INCIDENT_GROUP_BY}",
+        incident_id,
+    )
+    return dict(result)
 
 
 # ── Edit endpoints ────────────────────────────────────────────────────────────
@@ -684,7 +755,7 @@ async def update_incident(
     conn=Depends(get_connection),
 ):
     existing = await conn.fetchrow(
-        "SELECT id, organization_id FROM incidents WHERE id = $1",
+        "SELECT id, organization_id, created_by_user_id FROM incidents WHERE id = $1",
         incident_id,
     )
     if not existing:
@@ -693,14 +764,29 @@ async def update_incident(
             detail="Incident not found",
         )
 
-    await require_org_write_access(
-        current_user,
-        existing["organization_id"],
-        conn,
-        allowed_org_roles=("DIRECTOR", "STAFF"),
+    is_director, is_creator, is_assignee = await _incident_membership_flags(
+        current_user, existing["organization_id"], incident_id, existing["created_by_user_id"], conn,
     )
 
-    fields = {k: v for k, v in payload.model_dump().items() if v is not None}
+    # Права редактирования полей:
+    # - название/описание/важность/дата/типы — автор инцидента или директор
+    # - статус — автор, директор или назначенный исполнитель
+    # - срок исполнения — только директор
+    allowed_keys: set[str] = set()
+    if is_director or is_creator:
+        allowed_keys |= {"title", "description", "severity", "incident_date"}
+    if is_director or is_creator or is_assignee:
+        allowed_keys |= {"status"}
+    if is_director:
+        allowed_keys |= {"due_at"}
+
+    raw = payload.model_dump(exclude={"problem_type_ids"})
+    fields = {
+        k: (_naive(v) if isinstance(v, datetime) else v)
+        for k, v in raw.items()
+        if v is not None and k in allowed_keys
+    }
+
     if fields:
         set_parts = []
         values = [incident_id]
@@ -722,28 +808,60 @@ async def update_incident(
             *values,
         )
 
+    if payload.problem_type_ids is not None and (is_director or is_creator):
+        await conn.execute("DELETE FROM incident_type_links WHERE incident_id = $1", incident_id)
+        if payload.problem_type_ids:
+            await conn.executemany(
+                "INSERT INTO incident_type_links (incident_id, problem_type_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                [(incident_id, tid) for tid in payload.problem_type_ids],
+            )
+
     row = await conn.fetchrow(
-        """
-        SELECT
-            i.id,
-            i.organization_id,
-            o.name AS organization,
-            i.title,
-            i.description,
-            i.status,
-            i.severity,
-            i.incident_date,
-            i.created_by_user_id,
-            i.created_at,
-            i.updated_at
-        FROM incidents i
-        JOIN organizations o ON o.id = i.organization_id
-        WHERE i.id = $1
-        """,
+        f"{_INCIDENT_SELECT} WHERE i.id = $1 {_INCIDENT_GROUP_BY}",
         incident_id,
     )
     return dict(row)
 
+
+@router.put("/incidents/{incident_id}/assignees")
+async def set_incident_assignees(
+    incident_id: int,
+    payload: IncidentAssigneesUpdate,
+    current_user=Depends(get_current_user),
+    conn=Depends(get_connection),
+):
+    existing = await conn.fetchrow(
+        "SELECT id, organization_id, created_by_user_id FROM incidents WHERE id = $1",
+        incident_id,
+    )
+    if not existing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Incident not found",
+        )
+
+    is_director, is_creator, _ = await _incident_membership_flags(
+        current_user, existing["organization_id"], None, existing["created_by_user_id"], conn,
+    )
+    if not (is_director or is_creator):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Назначать исполнителей может только директор или автор инцидента",
+        )
+
+    await conn.execute("DELETE FROM incident_assignees WHERE incident_id = $1", incident_id)
+    user_ids = list(dict.fromkeys(payload.user_ids))  # de-dupe, preserve order
+    if user_ids:
+        await conn.executemany(
+            "INSERT INTO incident_assignees (incident_id, user_id, assigned_by) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+            [(incident_id, uid, current_user["id"]) for uid in user_ids],
+        )
+
+    row = await conn.fetchrow(
+        f"{_INCIDENT_SELECT} WHERE i.id = $1 {_INCIDENT_GROUP_BY}",
+        incident_id,
+    )
+    return dict(row)
 
 
 @router.delete("/incidents/{incident_id}")
@@ -997,6 +1115,25 @@ async def _notifications_data(current_user: dict, conn) -> dict:
         org_ids, user_id,
     )
 
+    assigned_incidents = await conn.fetch(
+        """
+        SELECT i.id, i.title, i.severity, i.status
+        FROM incidents i
+        JOIN incident_assignees ia ON ia.incident_id = i.id
+        WHERE ia.user_id = $2
+          AND i.status != 'RESOLVED'
+          AND ($1::bigint[] IS NULL OR i.organization_id = ANY($1))
+          AND i.id NOT IN (
+            SELECT item_id FROM notification_reads WHERE user_id = $2 AND item_type = 'incident_assignment'
+          )
+        ORDER BY
+            CASE i.severity WHEN 'HIGH' THEN 0 WHEN 'MEDIUM' THEN 1 ELSE 2 END,
+            i.created_at DESC
+        LIMIT 5
+        """,
+        org_ids, user_id,
+    )
+
     overdue_docs = await conn.fetch(
         """
         SELECT id, name, uploaded_at
@@ -1045,8 +1182,9 @@ async def _notifications_data(current_user: dict, conn) -> dict:
     )
 
     return {
-        "total": len(incidents) + len(overdue_docs) + len(today_events) + len(upcoming_events),
+        "total": len(incidents) + len(assigned_incidents) + len(overdue_docs) + len(today_events) + len(upcoming_events),
         "incidents": [dict(r) for r in incidents],
+        "assigned_incidents": [dict(r) for r in assigned_incidents],
         "overdue_documents": [dict(r) for r in overdue_docs],
         "today_events": [
             {**dict(r), "starts_at": r["starts_at"].isoformat() if hasattr(r["starts_at"], "isoformat") else r["starts_at"]}
@@ -1099,6 +1237,8 @@ async def mark_all_notifications_read(
     user_id = current_user["id"]
     for inc in data["incidents"]:
         rows.append((user_id, "incident", inc["id"]))
+    for inc in data["assigned_incidents"]:
+        rows.append((user_id, "incident_assignment", inc["id"]))
     for doc in data["overdue_documents"]:
         rows.append((user_id, "document", doc["id"]))
     for ev in data["today_events"] + data["upcoming_events"]:

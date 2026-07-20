@@ -18,13 +18,11 @@ from app.api.permissions import (
 router = APIRouter(prefix="/data", tags=["documents"])
 
 UPLOAD_DIR = Path("/app/documents")
-VALID_STATUSES = {"PENDING", "APPROVED", "OVERDUE"}
 
 
 class DocumentUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
-    status: Optional[str] = None
 
 
 async def _log(conn, document_id: int, user_id: int, action: str, details: str = None):
@@ -52,7 +50,6 @@ async def list_documents(
             o.name AS organization,
             d.name,
             d.description,
-            d.status,
             d.original_filename,
             d.file_size,
             d.uploaded_at,
@@ -76,14 +73,10 @@ async def upload_document(
     organization_id: int = Form(...),
     name: str = Form(...),
     description: str = Form(""),
-    status: str = Form("PENDING"),
     file: UploadFile = File(...),
     current_user=Depends(get_current_user),
     conn=Depends(get_connection),
 ):
-    if status not in VALID_STATUSES:
-        raise HTTPException(status_code=422, detail="Invalid status")
-
     await require_org_write_access(
         current_user, organization_id, conn,
         allowed_org_roles=("DIRECTOR", "STAFF"),
@@ -104,13 +97,12 @@ async def upload_document(
         """
         INSERT INTO documents
             (organization_id, name, description, status, file_path, original_filename, file_size, uploaded_by)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING id, organization_id, name, description, status, original_filename, file_size, uploaded_at, updated_at
+        VALUES ($1, $2, $3, 'PENDING', $4, $5, $6, $7)
+        RETURNING id, organization_id, name, description, original_filename, file_size, uploaded_at, updated_at
         """,
         organization_id,
         name,
         description or None,
-        status,
         str(file_path),
         file.filename,
         len(contents),
@@ -149,9 +141,6 @@ async def update_document(
         allowed_org_roles=("DIRECTOR", "STAFF"),
     )
 
-    if payload.status and payload.status not in VALID_STATUSES:
-        raise HTTPException(status_code=422, detail="Invalid status")
-
     fields = {k: v for k, v in payload.model_dump().items() if v is not None}
     if fields:
         fields["updated_at"] = "NOW()"
@@ -174,7 +163,7 @@ async def update_document(
     rows = await conn.fetch(
         """
         SELECT d.id, d.organization_id, o.name AS organization,
-               d.name, d.description, d.status,
+               d.name, d.description,
                d.original_filename, d.file_size, d.uploaded_at, d.updated_at,
                u.last_name AS uploader_last_name, u.first_name AS uploader_first_name, u.email AS uploader_email
         FROM documents d

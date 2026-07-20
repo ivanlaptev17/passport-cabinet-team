@@ -13,20 +13,6 @@ import {
 import Layout from "../../components/Layout";
 import { useAuth } from "../../contexts/AuthContext";
 
-const STATUS_OPTIONS = [
-  { value: "PENDING", label: "На согласовании", badge: "warning" },
-  { value: "APPROVED", label: "Исполнено", badge: "success" },
-  { value: "OVERDUE", label: "Просрочено", badge: "danger" },
-];
-
-function statusLabel(s: string) {
-  return STATUS_OPTIONS.find((o) => o.value === s)?.label ?? s;
-}
-
-function statusBadge(s: string) {
-  return STATUS_OPTIONS.find((o) => o.value === s)?.badge ?? "secondary";
-}
-
 function formatBytes(n: number | null) {
   if (!n) return "—";
   if (n < 1024) return `${n} Б`;
@@ -47,14 +33,12 @@ type UploadForm = {
   organization_id: string;
   name: string;
   description: string;
-  status: string;
   file: File | null;
 };
 
 type EditForm = {
   name: string;
   description: string;
-  status: string;
 };
 
 export default function DocumentsPage() {
@@ -76,13 +60,12 @@ export default function DocumentsPage() {
     organization_id: "",
     name: "",
     description: "",
-    status: "PENDING",
     file: null,
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [editDoc, setEditDoc] = useState<Document | null>(null);
-  const [editForm, setEditForm] = useState<EditForm>({ name: "", description: "", status: "" });
+  const [editForm, setEditForm] = useState<EditForm>({ name: "", description: "" });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -107,7 +90,7 @@ export default function DocumentsPage() {
         (d.description ?? "").toLowerCase().includes(q) ||
         d.organization.toLowerCase().includes(q) ||
         d.original_filename.toLowerCase().includes(q) ||
-        statusLabel(d.status).toLowerCase().includes(q),
+        formatDate(d.uploaded_at).includes(q),
     );
   }, [documents, search]);
 
@@ -116,7 +99,6 @@ export default function DocumentsPage() {
       organization_id: organizations[0] ? String(organizations[0].id) : "",
       name: "",
       description: "",
-      status: "PENDING",
       file: null,
     });
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -136,7 +118,6 @@ export default function DocumentsPage() {
       fd.append("organization_id", uploadForm.organization_id);
       fd.append("name", uploadForm.name);
       fd.append("description", uploadForm.description);
-      fd.append("status", uploadForm.status);
       fd.append("file", uploadForm.file);
       const created = await uploadDocument(fd);
       setDocuments((prev) => [created, ...prev]);
@@ -150,7 +131,7 @@ export default function DocumentsPage() {
 
   const openEdit = (doc: Document) => {
     setEditDoc(doc);
-    setEditForm({ name: doc.name, description: doc.description ?? "", status: doc.status });
+    setEditForm({ name: doc.name, description: doc.description ?? "" });
   };
 
   const closeEdit = () => { setEditDoc(null); };
@@ -162,7 +143,6 @@ export default function DocumentsPage() {
       const updated = await updateDocument(editDoc.id, {
         name: editForm.name,
         description: editForm.description || undefined,
-        status: editForm.status,
       });
       setDocuments((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
       closeEdit();
@@ -228,7 +208,9 @@ export default function DocumentsPage() {
               </button>
               <div>
                 <h5 className="mb-0 fw-semibold">Документооборот</h5>
-                <small className="text-muted">Загрузка, просмотр и управление документами</small>
+                <small className="text-muted">
+                  Общие положения школы в открытом доступе для всех сотрудников
+                </small>
               </div>
             </div>
 
@@ -248,7 +230,7 @@ export default function DocumentsPage() {
             <input
               type="text"
               className="form-control"
-              placeholder="Поиск..."
+              placeholder="Поиск по названию, дате..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -277,7 +259,6 @@ export default function DocumentsPage() {
                         <th>Организация</th>
                         <th>Название</th>
                         <th>Описание</th>
-                        <th>Статус</th>
                         <th>Файл</th>
                         <th>Размер</th>
                         <th>Загружен</th>
@@ -288,7 +269,7 @@ export default function DocumentsPage() {
                     <tbody>
                       {filtered.length === 0 ? (
                         <tr>
-                          <td colSpan={10} className="text-center text-muted py-4">
+                          <td colSpan={9} className="text-center text-muted py-4">
                             Данные отсутствуют
                           </td>
                         </tr>
@@ -299,11 +280,6 @@ export default function DocumentsPage() {
                             <td>{doc.organization}</td>
                             <td><strong>{doc.name}</strong></td>
                             <td style={{ minWidth: 200 }}>{doc.description ?? "—"}</td>
-                            <td>
-                              <span className={`badge text-bg-${statusBadge(doc.status)}`}>
-                                {statusLabel(doc.status)}
-                              </span>
-                            </td>
                             <td>
                               <span
                                 className="text-truncate d-inline-block"
@@ -377,7 +353,7 @@ export default function DocumentsPage() {
 
               <div className="modal-body">
                 <div className="row g-3">
-                  <div className="col-md-6">
+                  <div className="col-12">
                     <label className="form-label small fw-semibold">Организация</label>
                     <select
                       className="form-select"
@@ -387,19 +363,6 @@ export default function DocumentsPage() {
                       <option value="">Выберите организацию</option>
                       {organizations.map((o) => (
                         <option key={o.id} value={o.id}>{o.name}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="col-md-6">
-                    <label className="form-label small fw-semibold">Статус</label>
-                    <select
-                      className="form-select"
-                      value={uploadForm.status}
-                      onChange={(e) => setUploadForm((f) => ({ ...f, status: e.target.value }))}
-                    >
-                      {STATUS_OPTIONS.map((o) => (
-                        <option key={o.value} value={o.value}>{o.label}</option>
                       ))}
                     </select>
                   </div>
@@ -489,19 +452,6 @@ export default function DocumentsPage() {
                       value={editForm.name}
                       onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
                     />
-                  </div>
-
-                  <div className="col-12">
-                    <label className="form-label small fw-semibold">Статус</label>
-                    <select
-                      className="form-select"
-                      value={editForm.status}
-                      onChange={(e) => setEditForm((f) => ({ ...f, status: e.target.value }))}
-                    >
-                      {STATUS_OPTIONS.map((o) => (
-                        <option key={o.value} value={o.value}>{o.label}</option>
-                      ))}
-                    </select>
                   </div>
 
                   <div className="col-12">

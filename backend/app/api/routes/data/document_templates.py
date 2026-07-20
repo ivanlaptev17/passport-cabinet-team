@@ -1,11 +1,12 @@
 import io
+import json
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
-from pydantic import BaseModel
-from docxtpl import DocxTemplate
+from docx.shared import Mm
+from docxtpl import DocxTemplate, InlineImage
 
 from app.api.security import get_current_user
 
@@ -58,16 +59,19 @@ async def list_document_templates(current_user=Depends(get_current_user)):
     ]
 
 
-class GenerateRequest(BaseModel):
-    values: dict
-
-
 @router.post("/{template_id}/generate")
 async def generate_document(
     template_id: str,
-    payload: GenerateRequest,
+    values: str = Form(...),
+    logo: UploadFile | None = File(None),
     current_user=Depends(get_current_user),
 ):
+    """
+    Принимает multipart/form-data:
+    - values: JSON-строка с данными для плейсхолдеров шаблона
+    - logo: необязательный файл логотипа школы (PNG/JPG), вставляется
+      в шапку документа вместо плейсхолдера {{ logo }}
+    """
     tpl_meta = TEMPLATES.get(template_id)
     if not tpl_meta:
         raise HTTPException(status_code=404, detail="Шаблон не найден")
@@ -76,8 +80,28 @@ async def generate_document(
     if not tpl_path.exists():
         raise HTTPException(status_code=500, detail="Файл шаблона не найден на сервере")
 
+    try:
+        parsed_values = json.loads(values)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Некорректный формат values")
+
     tpl = DocxTemplate(tpl_path)
-    tpl.render(payload.values)
+
+    if logo is not None and logo.filename:
+        logo_bytes = await logo.read()
+        parsed_values["logo"] = InlineImage(tpl, io.BytesIO(logo_bytes), width=Mm(30))
+    else:
+        parsed_values["logo"] = ""
+
+    try:
+        tpl.render(parsed_values)
+    except Exception:
+        if logo is not None and logo.filename:
+            raise HTTPException(
+                status_code=422,
+                detail="Не удалось обработать логотип. Поддерживаются форматы PNG и JPG.",
+            )
+        raise
 
     buf = io.BytesIO()
     tpl.save(buf)
