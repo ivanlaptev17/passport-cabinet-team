@@ -89,7 +89,7 @@ async def generate_document(
 
     if logo is not None and logo.filename:
         logo_bytes = await logo.read()
-        parsed_values["logo"] = InlineImage(tpl, io.BytesIO(logo_bytes), width=Mm(30))
+        parsed_values["logo"] = InlineImage(tpl, io.BytesIO(logo_bytes), width=Mm(40))
     else:
         parsed_values["logo"] = ""
 

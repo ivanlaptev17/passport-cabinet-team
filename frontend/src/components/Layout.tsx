@@ -98,8 +98,8 @@ export default function Layout({ children }: Props) {
 
           {profile?.organization_name && (
             <div
-              className="d-none d-lg-flex align-items-center ms-3 ps-3"
-              style={{ borderLeft: "1px solid rgba(255,255,255,0.25)", maxWidth: 220 }}
+              className="d-none d-xl-flex align-items-center ms-2 ps-2"
+              style={{ borderLeft: "1px solid rgba(255,255,255,0.25)", maxWidth: 160, flexShrink: 0 }}
               title={profile.organization_name}
             >
               <span
@@ -111,82 +111,88 @@ export default function Layout({ children }: Props) {
             </div>
           )}
 
-          <ul className="navbar-nav flex-row gap-2 me-auto ms-4 align-items-center">
+          <ul className="navbar-nav flex-row gap-1 me-auto ms-2 ms-xl-3 align-items-center flex-wrap">
             <li className="nav-item">
               <Link
                 to="/dashboard"
-                className={`nav-link px-3 py-2 rounded-pill ${
+                title="Главная"
+                className={`nav-link px-2 py-2 rounded-pill ${
                   isHomeActive ? "layout-nav-active" : "layout-nav-default"
                 }`}
               >
-                <i className="fa fa-house me-2" />
-                Главная
+                <i className="fa fa-house me-xl-2" />
+                <span className="d-none d-xl-inline">Главная</span>
               </Link>
             </li>
 
             <li className="nav-item">
               <Link
                 to="/calendar"
-                className={`nav-link px-3 py-2 rounded-pill ${
+                title="Календарь"
+                className={`nav-link px-2 py-2 rounded-pill ${
                   isCalendarActive ? "layout-nav-active" : "layout-nav-default"
                 }`}
               >
-                <i className="fa fa-calendar me-2" />
-                Календарь
+                <i className="fa fa-calendar me-xl-2" />
+                <span className="d-none d-xl-inline">Календарь</span>
               </Link>
             </li>
 
             <li className="nav-item">
               <Link
                 to="/documents"
-                className={`nav-link px-3 py-2 rounded-pill ${
+                title="Документы"
+                className={`nav-link px-2 py-2 rounded-pill ${
                   isDocumentsActive ? "layout-nav-active" : "layout-nav-default"
                 }`}
               >
-                <i className="fa fa-folder-open me-2" />
-                Документы
+                <i className="fa fa-folder-open me-xl-2" />
+                <span className="d-none d-xl-inline">Документы</span>
               </Link>
             </li>
 
             <li className="nav-item">
               <Link
                 to="/document-templates"
-                className={`nav-link px-3 py-2 rounded-pill ${
+                title="Конструктор"
+                className={`nav-link px-2 py-2 rounded-pill ${
                   isDocumentTemplatesActive ? "layout-nav-active" : "layout-nav-default"
                 }`}
               >
-                <i className="fa fa-file-pen me-2" />
-                Конструктор
+                <i className="fa fa-file-pen me-xl-2" />
+                <span className="d-none d-xl-inline">Конструктор</span>
               </Link>
             </li>
 
             <li className="nav-item">
               <Link
                 to="/incidents"
-                className={`nav-link px-3 py-2 rounded-pill ${
+                title="Инциденты"
+                className={`nav-link px-2 py-2 rounded-pill ${
                   isIncidentsActive ? "layout-nav-active" : "layout-nav-default"
                 }`}
               >
-                <i className="fa fa-triangle-exclamation me-2" />
-                Инциденты
+                <i className="fa fa-triangle-exclamation me-xl-2" />
+                <span className="d-none d-xl-inline">Инциденты</span>
               </Link>
             </li>
 
             <li className="nav-item position-relative" ref={dataMenuRef}>
               <button
                 type="button"
-                className={`nav-link px-3 py-2 rounded-pill border-0 d-flex align-items-center ${
+                title="Данные"
+                className={`nav-link px-2 py-2 rounded-pill border-0 d-flex align-items-center ${
                   isDataActive ? "layout-nav-active" : "layout-nav-default"
                 }`}
                 style={{ background: "transparent" }}
                 onClick={() => setDataMenuOpen((prev) => !prev)}
               >
-                <i className="fa fa-database me-2" />
-                Данные
+                <i className="fa fa-database me-xl-2" />
+                <span className="d-none d-xl-inline">Данные</span>
                 <i
                   className={`fa ${
                     dataMenuOpen ? "fa-chevron-up" : "fa-chevron-down"
-                  } ms-2`}
+                  } ms-1 ms-xl-2`}
                   style={{ fontSize: 11 }}
                 />
               </button>
