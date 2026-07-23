@@ -214,7 +214,7 @@ export default function DocumentTemplatesPage() {
                       onChange={(e) => setLogoFile(e.target.files?.[0] ?? null)}
                     />
                     <div className="form-text">
-                      PNG или JPG. Будет вставлен в шапку документа. Черновой вариант — пробуем на ВКС.
+                      PNG или JPG. Будет вставлен в шапку документа.
                     </div>
                   </div>
 
