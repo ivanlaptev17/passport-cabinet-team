@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.main import api_router
 from app.api.database.db import connect_to_db, close_db
+from app.api.redis_client import connect_to_redis, close_redis
 
 app = FastAPI()
 
@@ -20,9 +21,11 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup():
     await connect_to_db()
+    await connect_to_redis()
 
 @app.on_event("shutdown")
 async def shutdown():
+    await close_redis()
     await close_db()
 
 app.include_router(api_router, prefix="")

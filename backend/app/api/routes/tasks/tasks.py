@@ -12,6 +12,8 @@ from app.api.permissions import (
     require_org_view_access,
     require_org_write_access,
 )
+from app.api.routes.tasks import events, storage
+from app.api.routes.tasks.access import task_membership_flags as _task_membership_flags
 
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -83,26 +85,7 @@ _TASK_SELECT = """
 _TASK_GROUP_BY = "GROUP BY t.id, o.name, b.name, cu.last_name, cu.first_name"
 
 
-async def _task_membership_flags(current_user: dict, organization_id: int, task_id: int | None, created_by_user_id: int | None, conn):
-    """Возвращает (is_privileged, is_creator, is_participant) для проверки прав на задачу.
-
-    Флаги только вычисляются — исключение бросает вызывающий эндпоинт,
-    иначе участник задачи без подходящего членства в ОО никогда бы не прошёл проверку.
-    """
-    if has_global_full_access(current_user):
-        is_privileged = True
-    else:
-        membership = await get_membership_for_org(current_user["id"], organization_id, conn)
-        is_privileged = membership is not None and membership["org_role_code"] in ("DIRECTOR", "RESPONSIBLE")
-    is_creator = created_by_user_id is not None and current_user["id"] == created_by_user_id
-    is_participant = False
-    if task_id is not None:
-        row = await conn.fetchrow(
-            "SELECT 1 FROM task_participants WHERE task_id = $1 AND user_id = $2",
-            task_id, current_user["id"],
-        )
-        is_participant = row is not None
-    return is_privileged, is_creator, is_participant
+# Расчёт прав на задачу живёт в access.py — его переиспользует чат
 
 
 # ── Задачи ────────────────────────────────────────────────────────────────────
@@ -133,30 +116,40 @@ async def create_task(
                 detail="Здание не принадлежит указанной организации",
             )
 
-    row = await conn.fetchrow(
-        """
-        INSERT INTO tasks (
-            organization_id,
-            building_id,
-            title,
-            description,
-            status,
-            severity,
-            due_at,
-            created_by_user_id
+    async with conn.transaction():
+        row = await conn.fetchrow(
+            """
+            INSERT INTO tasks (
+                organization_id,
+                building_id,
+                title,
+                description,
+                status,
+                severity,
+                due_at,
+                created_by_user_id
+            )
+            VALUES ($1, $2, $3, $4, 'NEW', $5, $6, $7)
+            RETURNING id, organization_id, created_by_user_id
+            """,
+            payload.organization_id,
+            payload.building_id,
+            payload.title,
+            payload.description,
+            payload.severity,
+            _naive(payload.due_at),
+            current_user["id"],
         )
-        VALUES ($1, $2, $3, $4, 'NEW', $5, $6, $7)
-        RETURNING id
-        """,
-        payload.organization_id,
-        payload.building_id,
-        payload.title,
-        payload.description,
-        payload.severity,
-        _naive(payload.due_at),
-        current_user["id"],
-    )
-    task_id = row["id"]
+        task = dict(row)
+        task_id = task["id"]
+
+        # Первая запись в чате задачи. Уведомлений тут нет: кроме автора в задаче
+        # ещё никого нет, а автору о собственном действии не сообщаем
+        outgoing = await events.record_system_event(
+            conn, task, "TASK_CREATED", current_user["id"],
+        )
+
+    await events.publish_events(task_id, outgoing)
 
     result = await conn.fetchrow(
         f"{_TASK_SELECT} WHERE t.id = $1 {_TASK_GROUP_BY}",
@@ -194,11 +187,13 @@ async def delete_task(
                 detail="Удалить задачу может только её автор или Ответственный ОО",
             )
 
-    # task_participants удалятся каскадом по внешнему ключу
+    # Участники, сообщения и уведомления удалятся каскадом по внешнему ключу
     await conn.execute(
         "DELETE FROM tasks WHERE id = $1",
         task_id,
     )
+    # А вот файлы с диска каскад не уносит
+    storage.remove_task_files(existing["organization_id"], task_id)
 
     return {"ok": True}
 
@@ -237,13 +232,78 @@ async def set_task_participants(
             detail="Управлять участниками может участник задачи, её автор или Ответственный ОО",
         )
 
-    await conn.execute("DELETE FROM task_participants WHERE task_id = $1", task_id)
     user_ids = list(dict.fromkeys(payload.user_ids))  # de-dupe, preserve order
-    if user_ids:
-        await conn.executemany(
-            "INSERT INTO task_participants (task_id, user_id, added_by) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
-            [(task_id, uid, current_user["id"]) for uid in user_ids],
+
+    previous = await conn.fetch(
+        "SELECT user_id FROM task_participants WHERE task_id = $1",
+        task_id,
+    )
+    previous_ids = {r["user_id"] for r in previous}
+    added = [uid for uid in user_ids if uid not in previous_ids]
+    removed = sorted(previous_ids - set(user_ids))
+
+    # Добавлять можно только сотрудников этой же организации. Уже состоящих
+    # в задаче не проверяем: если сотрудника деактивировали, список всё равно
+    # должен сохраняться, а не падать с ошибкой
+    if added:
+        allowed = await conn.fetch(
+            """
+            SELECT user_id
+            FROM organization_memberships
+            WHERE organization_id = $1
+              AND is_active = TRUE
+              AND user_id = ANY($2::bigint[])
+            """,
+            existing["organization_id"], added,
         )
+        allowed_ids = {r["user_id"] for r in allowed}
+        if any(uid not in allowed_ids for uid in added):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Участником можно сделать только сотрудника этой организации",
+            )
+
+    names = {}
+    if added or removed:
+        name_rows = await conn.fetch(
+            """
+            SELECT id, last_name, first_name, middle_name
+            FROM users
+            WHERE id = ANY($1::bigint[])
+            """,
+            added + removed,
+        )
+        names = {r["id"]: dict(r) for r in name_rows}
+
+    outgoing = []
+    async with conn.transaction():
+        await conn.execute("DELETE FROM task_participants WHERE task_id = $1", task_id)
+        if user_ids:
+            await conn.executemany(
+                "INSERT INTO task_participants (task_id, user_id, added_by) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+                [(task_id, uid, current_user["id"]) for uid in user_ids],
+            )
+
+        # Уведомляем только самого человека: его добавили в задачу или убрали из неё.
+        # Остальные увидят это служебным сообщением, когда откроют чат
+        for event_type, changed in (("PARTICIPANT_ADDED", added), ("PARTICIPANT_REMOVED", removed)):
+            for uid in changed:
+                person = names.get(uid, {})
+                outgoing += await events.record_system_event(
+                    conn,
+                    dict(existing),
+                    event_type,
+                    current_user["id"],
+                    {
+                        "user_id": uid,
+                        "last_name": person.get("last_name"),
+                        "first_name": person.get("first_name"),
+                        "middle_name": person.get("middle_name"),
+                    },
+                    recipients=[uid],
+                )
+
+    await events.publish_events(task_id, outgoing)
 
     row = await conn.fetchrow(
         f"{_TASK_SELECT} WHERE t.id = $1 {_TASK_GROUP_BY}",
@@ -290,11 +350,57 @@ async def set_task_status(
             detail="Менять статус может участник задачи, её автор или Ответственный ОО",
         )
 
-    await conn.execute(
-        "UPDATE tasks SET status = $2, updated_at = NOW() WHERE id = $1",
-        task_id,
-        payload.status,
-    )
+    task = dict(existing)
+    outgoing = []
+    async with conn.transaction():
+        # Условие на смену статуса держит сам UPDATE: читать статус отдельным
+        # запросом нельзя — два одновременных запроса прошли бы проверку оба
+        # и записали в чат по событию каждый
+        changed = await conn.fetchrow(
+            """
+            UPDATE tasks AS t
+            SET status = $2, updated_at = NOW()
+            FROM tasks AS previous
+            WHERE t.id = $1
+              AND previous.id = t.id
+              AND t.status IS DISTINCT FROM $2
+            RETURNING previous.status AS previous_status
+            """,
+            task_id,
+            payload.status,
+        )
+        if changed is None:
+            # Статус уже такой — второй раз о том же не сообщаем
+            row = await conn.fetchrow(
+                f"{_TASK_SELECT} WHERE t.id = $1 {_TASK_GROUP_BY}",
+                task_id,
+            )
+            return dict(row)
+
+        previous_status = changed["previous_status"]
+        status_payload = {"from": previous_status, "to": payload.status}
+        audience = await events.task_audience(conn, task)
+
+        if payload.status == "PENDING_REVIEW":
+            # Задачу сдали на проверку: Ответственному ОО отдельное уведомление —
+            # это его сигнал проверить и закрыть. Чтобы не дублировать,
+            # обычное уведомление о смене статуса ему не шлём
+            supervisors = await events.org_supervisors(conn, task["organization_id"])
+            outgoing += await events.record_system_event(
+                conn, task, "STATUS_CHANGED", current_user["id"], status_payload,
+                recipients=audience - supervisors,
+            )
+            outgoing += await events.notify(
+                conn, task, "TASK_PENDING_REVIEW", current_user["id"],
+                recipients=supervisors, payload=status_payload,
+            )
+        else:
+            outgoing += await events.record_system_event(
+                conn, task, "STATUS_CHANGED", current_user["id"], status_payload,
+                recipients=audience,
+            )
+
+    await events.publish_events(task_id, outgoing)
 
     row = await conn.fetchrow(
         f"{_TASK_SELECT} WHERE t.id = $1 {_TASK_GROUP_BY}",

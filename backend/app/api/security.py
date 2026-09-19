@@ -7,6 +7,7 @@ from typing import Iterable
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.api.database import db as _db
 from app.api.database.db import get_connection
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -249,4 +250,27 @@ async def get_current_user(
         )
 
     return dict(row)
+
+
+async def get_current_user_for_stream(request: Request) -> dict:
+    """Аутентификация для SSE-эндпоинтов.
+
+    Обычный Depends(get_current_user) держит соединение из пула всё время жизни
+    ответа, а ответ у SSE живёт часами — десяток открытых вкладок исчерпал бы пул
+    (по умолчанию в нём 10 соединений) и подвесил остальные запросы.
+    Здесь соединение берётся только на проверку токена и сразу возвращается.
+
+    EventSource в браузере не умеет слать свои заголовки, поэтому основной
+    вариант тут — httpOnly cookie; Bearer разбираем вручную для curl и тестов.
+    """
+    header = request.headers.get("authorization") or ""
+    credentials = None
+    if header.lower().startswith("bearer "):
+        credentials = HTTPAuthorizationCredentials(
+            scheme="Bearer",
+            credentials=header[7:].strip(),
+        )
+
+    async with _db.pool.acquire() as conn:
+        return await get_current_user(request, credentials, conn)
     

@@ -3,12 +3,12 @@ from datetime import date, datetime, timezone as _tz
 import asyncio
 import json as _json
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from app.api.database.db import get_connection
 from app.api.database import db as _db
-from app.api.security import get_current_user
+from app.api.security import get_current_user, get_current_user_for_stream
 from app.api.permissions import (
     get_user_org_ids,
     is_org_scoped_user,
@@ -1252,7 +1252,12 @@ async def mark_all_notifications_read(
 
 
 @router.get("/notifications/stream")
-async def notifications_stream(current_user=Depends(get_current_user)):
+async def notifications_stream(request: Request):
+    # Пользователя резолвим вручную: Depends(get_current_user) держал бы соединение
+    # из пула всё время жизни стрима, а их в пуле всего 10 — десяток открытых
+    # вкладок подвесил бы остальные запросы
+    current_user = await get_current_user_for_stream(request)
+
     async def generator():
         try:
             while True:
