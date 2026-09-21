@@ -49,7 +49,7 @@ export default function Layout({ children }: Props) {
   const isCalendarActive = pathname === "/calendar";
   const isDocumentsActive = pathname === "/documents";
   const isDocumentTemplatesActive = pathname === "/document-templates";
-  const isIncidentsActive = pathname === "/incidents";
+  const isTasksActive = pathname.startsWith("/tasks");
 
   const isDataActive =
     pathname.startsWith("/organizations") ||
@@ -166,14 +166,14 @@ export default function Layout({ children }: Props) {
 
             <li className="nav-item">
               <Link
-                to="/incidents"
-                title="Инциденты"
+                to="/tasks"
+                title="Задачи"
                 className={`nav-link px-2 py-2 rounded-pill ${
-                  isIncidentsActive ? "layout-nav-active" : "layout-nav-default"
+                  isTasksActive ? "layout-nav-active" : "layout-nav-default"
                 }`}
               >
-                <i className="fa fa-triangle-exclamation me-xl-2" />
-                <span className="d-none d-xl-inline">Инциденты</span>
+                <i className="fa fa-clipboard-list me-xl-2" />
+                <span className="d-none d-xl-inline">Задачи</span>
               </Link>
             </li>
 

@@ -10,7 +10,8 @@ import FinancePage from "../pages/FinancePage";
 import ContingentPage from "../pages/ContingentPage";
 import EducationPage from "../pages/EducationPage";
 import CalendarPage from "../pages/CalendarPage";
-import IncidentsPage from "../pages/IncidentsPage/index";
+import TasksPage from "../pages/TasksPage/index";
+import TaskPage from "../pages/TaskPage/index";
 import DocumentsPage from "../pages/DocumentsPage/index";
 import DocumentTemplatesPage from "../pages/DocumentTemplatesPage/index";
 import ProfilePage from "../pages/ProfilePage/index";
@@ -50,7 +51,10 @@ function AppRoutes() {
       <Route path="/contingent"   element={<AuthGuard element={<ContingentPage />} />} />
       <Route path="/education"    element={<AuthGuard element={<EducationPage />} />} />
       <Route path="/calendar"     element={<AuthGuard element={<CalendarPage />} />} />
-      <Route path="/incidents"    element={<AuthGuard element={<IncidentsPage />} />} />
+      <Route path="/tasks"        element={<AuthGuard element={<TasksPage />} />} />
+      <Route path="/tasks/:taskId" element={<AuthGuard element={<TaskPage />} />} />
+      {/* Инциденты переехали в задачи — старые ссылки не роняем */}
+      <Route path="/incidents"    element={<Navigate to="/tasks" replace />} />
       <Route path="/documents"    element={<AuthGuard element={<DocumentsPage />} />} />
       <Route path="/document-templates" element={<AuthGuard element={<DocumentTemplatesPage />} />} />
       <Route path="/profile"      element={<AuthGuard element={<ProfilePage />} />} />

@@ -70,6 +70,7 @@ export type Organization = {
 
 export type Building = {
   id: number;
+  organization_id: number;
   name: string | null;
   address: string | null;
   created_at: string | null;

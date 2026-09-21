@@ -6,19 +6,17 @@ import {
   markAllNotificationsRead,
   type Notifications,
 } from "../api/data";
+import {
+  fetchTaskNotifications,
+  markNotificationsRead,
+  notificationsStreamUrl,
+  parseJson,
+  STATUS_LABELS,
+  type TaskNotification,
+  type TaskStatus,
+} from "../api/tasks";
 
 const API_URL = (import.meta.env.VITE_API_URL as string) ?? "http://localhost:8000";
-
-const SEVERITY_LABEL: Record<string, string> = {
-  HIGH: "Высокий",
-  MEDIUM: "Средний",
-  LOW: "Низкий",
-};
-const SEVERITY_DOT: Record<string, string> = {
-  HIGH: "#dc3545",
-  MEDIUM: "#fd7e14",
-  LOW: "#198754",
-};
 
 function fmtTime(s: string) {
   return new Date(s).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
@@ -27,12 +25,71 @@ function fmtDate(s: string) {
   return new Date(s).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
 }
 
+/** Подпись уведомления собирается на фронте по типу события. */
+function taskNotificationText(n: TaskNotification): string {
+  const payload = parseJson<{ from?: string; to?: string; unread_count?: number }>(
+    n.payload as { from?: string; to?: string; unread_count?: number } | string,
+    {},
+  );
+  switch (n.notification_type) {
+    case "PARTICIPANT_ADDED":
+      return "Вас добавили в задачу";
+    case "PARTICIPANT_REMOVED":
+      return "Вас убрали из задачи";
+    case "STATUS_CHANGED": {
+      const from = STATUS_LABELS[payload.from as TaskStatus] ?? payload.from ?? "";
+      const to = STATUS_LABELS[payload.to as TaskStatus] ?? payload.to ?? "";
+      return `Статус: ${from} → ${to}`;
+    }
+    case "NEW_MESSAGE": {
+      const count = payload.unread_count ?? 1;
+      return count > 1 ? `Новых сообщений: ${count}` : "Новое сообщение в чате";
+    }
+    case "TASK_PENDING_REVIEW":
+      return "Задача ждёт вашей проверки";
+    default:
+      return n.notification_type;
+  }
+}
+
 export default function NotificationBell() {
   const navigate = useNavigate();
   const [data, setData] = useState<Notifications | null>(null);
+  const [taskNotifications, setTaskNotifications] = useState<TaskNotification[]>([]);
   const [open, setOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+
+  // Уведомления по задачам: стартовая загрузка + живой поток
+  useEffect(() => {
+    fetchTaskNotifications()
+      .then((feed) => setTaskNotifications(feed.items))
+      .catch(() => null);
+
+    const stream = new EventSource(notificationsStreamUrl(), { withCredentials: true });
+    stream.onmessage = (e) => {
+      try {
+        const payload = JSON.parse(e.data as string) as {
+          type: string;
+          notification?: TaskNotification;
+        };
+        if (payload.type === "notification" && payload.notification) {
+          const incoming = payload.notification;
+          setTaskNotifications((prev) => [
+            incoming,
+            // одно уведомление на задачу — обновление заменяет прежнее
+            ...prev.filter((n) => n.id !== incoming.id),
+          ]);
+        }
+      } catch {
+        // мусор в потоке игнорируем
+      }
+    };
+    // Поток не закрываем: EventSource переподключается сам, а close() это отключил бы
+    // навсегда — например, после единственного 503, когда редис на секунду прилёг
+    stream.onerror = () => null;
+    return () => stream.close();
+  }, []);
 
   useEffect(() => {
     const es = new EventSource(`${API_URL}/data/notifications/stream`, {
@@ -69,8 +126,17 @@ export default function NotificationBell() {
   };
 
   const dismissAll = async () => {
-    await markAllNotificationsRead();
+    await Promise.all([
+      markAllNotificationsRead(),
+      markNotificationsRead({ all: true }).catch(() => null),
+    ]);
     setData({ total: 0, incidents: [], assigned_incidents: [], overdue_documents: [], today_events: [], upcoming_events: [] });
+    setTaskNotifications([]);
+  };
+
+  const dismissTask = async (id: number) => {
+    await markNotificationsRead({ ids: [id] });
+    setTaskNotifications((prev) => prev.filter((n) => n.id !== id));
   };
 
   useEffect(() => {
@@ -83,7 +149,14 @@ export default function NotificationBell() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const total = data?.total ?? 0;
+  // Считаем по тем секциям, которые реально показываем: инциденты из выдачи
+  // бэка ещё приходят, но в интерфейсе их больше нет — иначе бейдж показывал бы
+  // число, которому в списке ничего не соответствует
+  const total =
+    (data?.overdue_documents.length ?? 0) +
+    (data?.today_events.length ?? 0) +
+    (data?.upcoming_events.length ?? 0) +
+    taskNotifications.length;
 
   const go = (path: string) => {
     navigate(path);
@@ -147,26 +220,21 @@ export default function NotificationBell() {
               </div>
             )}
 
-            {/* Assigned to me */}
-            {(data?.assigned_incidents?.length ?? 0) > 0 && (
+            {/* Задачи */}
+            {taskNotifications.length > 0 && (
               <>
-                <SectionHeader icon="fa-user-check" label="Назначено вам" color="#0d6efd" />
-                {data!.assigned_incidents.map((inc) => (
-                  <NotifRow key={`assigned-${inc.id}`} onClick={() => go(`/incidents?highlight=${inc.id}`)}
-                    onDismiss={() => void dismiss("incident_assignment", inc.id)}>
-                    <span
-                      style={{
-                        width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
-                        background: SEVERITY_DOT[inc.severity] ?? "#888",
-                        display: "inline-block", marginTop: 4,
-                      }}
-                    />
+                <SectionHeader icon="fa-clipboard-list" label="Задачи" color="#37474f" />
+                {taskNotifications.map((n) => (
+                  <NotifRow
+                    key={`task-${n.id}`}
+                    onClick={() => go(`/tasks/${n.task_id}`)}
+                    onDismiss={() => void dismissTask(n.id)}
+                  >
+                    <i className="fa fa-clipboard-list flex-shrink-0" style={{ marginTop: 2, fontSize: 13, color: "#37474f" }} />
                     <div>
-                      <div className="fw-semibold text-dark" style={{ fontSize: 13 }}>{inc.title}</div>
+                      <div className="fw-semibold text-dark" style={{ fontSize: 13 }}>{n.task_title}</div>
                       <div className="text-muted" style={{ fontSize: 11 }}>
-                        {SEVERITY_LABEL[inc.severity] ?? inc.severity}
-                        {" · "}
-                        {inc.status === "OPEN" ? "Открыт" : "В работе"}
+                        {taskNotificationText(n)}
                       </div>
                     </div>
                   </NotifRow>
@@ -174,32 +242,8 @@ export default function NotificationBell() {
               </>
             )}
 
-            {/* Incidents */}
-            {(data?.incidents?.length ?? 0) > 0 && (
-              <>
-                <SectionHeader icon="fa-triangle-exclamation" label="Инциденты" color="#dc3545" />
-                {data!.incidents.map((inc) => (
-                  <NotifRow key={`inc-${inc.id}`} onClick={() => go(`/incidents?highlight=${inc.id}`)}
-                    onDismiss={() => void dismiss("incident", inc.id)}>
-                    <span
-                      style={{
-                        width: 8, height: 8, borderRadius: "50%", flexShrink: 0,
-                        background: SEVERITY_DOT[inc.severity] ?? "#888",
-                        display: "inline-block", marginTop: 4,
-                      }}
-                    />
-                    <div>
-                      <div className="fw-semibold text-dark" style={{ fontSize: 13 }}>{inc.title}</div>
-                      <div className="text-muted" style={{ fontSize: 11 }}>
-                        {SEVERITY_LABEL[inc.severity] ?? inc.severity}
-                        {" · "}
-                        {inc.status === "OPEN" ? "Открыт" : "В работе"}
-                      </div>
-                    </div>
-                  </NotifRow>
-                ))}
-              </>
-            )}
+            {/* Инциденты переехали в задачи: их секции убраны,
+                ссылки вели на страницу, которой больше нет */}
 
             {/* Overdue documents */}
             {(data?.overdue_documents?.length ?? 0) > 0 && (

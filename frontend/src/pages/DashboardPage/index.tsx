@@ -1,15 +1,20 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "../../components/Layout";
-import { useAuth } from "../../contexts/AuthContext";
 import {
   fetchFinanceSummary,
-  fetchIncidentsWidget,
   fetchUpcomingEvents,
   type FinanceSummary,
-  type IncidentWidgetItem,
   type CalendarEvent,
 } from "../../api/data";
+import {
+  fetchMyTasks,
+  SEVERITY_COLORS,
+  SEVERITY_LABELS,
+  STATUS_COLORS,
+  STATUS_LABELS,
+  type Task,
+} from "../../api/tasks";
 
 type CardProps = {
   icon: string;
@@ -248,94 +253,16 @@ function FinancePulse({ data }: { data: FinanceSummary | null }) {
   );
 }
 
-function severityLabel(severity: string) {
-  switch (severity) {
-    case "HIGH":
-      return "Высокий";
-    case "MEDIUM":
-      return "Средний";
-    case "LOW":
-      return "Низкий";
-    default:
-      return severity;
-  }
-}
-
-function severityMeta(severity: string) {
-  switch (severity) {
-    case "HIGH":
-      return {
-        color: "#dc3545",
-        bg: "#fdecef",
-      };
-    case "MEDIUM":
-      return {
-        color: "#fd7e14",
-        bg: "#fff3e0",
-      };
-    case "LOW":
-      return {
-        color: "#198754",
-        bg: "#e9f7ef",
-      };
-    default:
-      return {
-        color: "#6c757d",
-        bg: "#f3f5f7",
-      };
-  }
-}
-
-function statusLabel(status: string) {
-  switch (status) {
-    case "OPEN":
-      return "Открыт";
-    case "IN_PROGRESS":
-      return "В работе";
-    case "RESOLVED":
-      return "Решён";
-    default:
-      return status;
-  }
-}
-
-function statusMeta(status: string) {
-  switch (status) {
-    case "OPEN":
-      return {
-        color: "#dc3545",
-        bg: "#fdecef",
-      };
-    case "IN_PROGRESS":
-      return {
-        color: "#fd7e14",
-        bg: "#fff3e0",
-      };
-    case "RESOLVED":
-      return {
-        color: "#198754",
-        bg: "#e9f7ef",
-      };
-    default:
-      return {
-        color: "#6c757d",
-        bg: "#f3f5f7",
-      };
-  }
-}
-
 function formatWidgetDate(value: string) {
   return new Date(value).toLocaleDateString("ru-RU");
 }
 
-function IncidentsWidget({
+function TasksWidget({
   items,
   onOpen,
-  highlightUnassigned,
 }: {
-  items: IncidentWidgetItem[] | null;
+  items: Task[] | null;
   onOpen: () => void;
-  highlightUnassigned: boolean;
 }) {
   return (
     <div
@@ -348,35 +275,23 @@ function IncidentsWidget({
           <div className="d-flex align-items-center gap-2">
             <div
               className="d-flex align-items-center justify-content-center rounded-3"
-              style={{
-                width: 36,
-                height: 36,
-                background: "#fdecef",
-                color: "#dc3545",
-                fontSize: 16,
-              }}
+              style={{ width: 36, height: 36, background: "#e8eef5", color: "#37474f", fontSize: 16 }}
             >
-              <i className="fa fa-triangle-exclamation" />
+              <i className="fa fa-clipboard-list" />
             </div>
             <div>
               <div className="fw-bold" style={{ fontSize: 15 }}>
-                Инциденты
+                Задачи
               </div>
               <div className="text-muted" style={{ fontSize: 12 }}>
-                Последние конфликтные ситуации
+                Ваши текущие задачи
               </div>
             </div>
           </div>
 
           <div
             className="d-flex align-items-center justify-content-center rounded-circle incidents-widget-arrow"
-            style={{
-              width: 28,
-              height: 28,
-              background: "#f3f5f7",
-              color: "#5f6b73",
-              flexShrink: 0,
-            }}
+            style={{ width: 28, height: 28, background: "#f3f5f7", color: "#5f6b73", flexShrink: 0 }}
           >
             <i className="fa fa-arrow-right" style={{ fontSize: 10 }} />
           </div>
@@ -387,45 +302,34 @@ function IncidentsWidget({
             <div className="spinner-border spinner-border-sm text-secondary" />
           </div>
         ) : items.length === 0 ? (
-          <div
-            className="rounded-4 px-3 py-4 text-center"
-            style={{ background: "#f8fafb" }}
-          >
+          <div className="rounded-4 px-3 py-4 text-center" style={{ background: "#f8fafb" }}>
             <div className="text-muted" style={{ fontSize: 13 }}>
-              Инцидентов пока нет
+              Задач пока нет
             </div>
           </div>
         ) : (
           <div className="d-flex flex-column gap-2">
             {items.map((item) => {
-              const sev = severityMeta(item.severity);
-              const stat = statusMeta(item.status);
-              const unassigned =
-                highlightUnassigned && item.status !== "RESOLVED" && !item.has_assignees;
+              const overdue =
+                !!item.due_at && item.status !== "DONE" && new Date(item.due_at) < new Date();
 
               return (
                 <div
                   key={item.id}
                   className="rounded-4 px-3 py-3 incident-widget-row"
                   style={{
-                    background: unassigned ? "#fff5f5" : "#f8fafb",
-                    border: unassigned ? "1px solid #f5c2c7" : "1px solid #eef1f4",
-                    borderLeft: unassigned ? "3px solid #dc3545" : undefined,
+                    background: overdue ? "#fff5f5" : "#f8fafb",
+                    border: overdue ? "1px solid #f5c2c7" : "1px solid #eef1f4",
+                    borderLeft: overdue ? "3px solid #dc3545" : undefined,
                   }}
                 >
                   <div className="d-flex justify-content-between align-items-start gap-2 mb-2">
                     <div style={{ minWidth: 0 }}>
-                      <div
-                        className="fw-semibold text-truncate"
-                        style={{ fontSize: 13 }}
-                      >
+                      <div className="fw-semibold text-truncate" style={{ fontSize: 13 }}>
                         {item.title}
                       </div>
-                      <div
-                        className="text-muted text-truncate"
-                        style={{ fontSize: 11 }}
-                      >
-                        {item.organization}
+                      <div className="text-muted text-truncate" style={{ fontSize: 11 }}>
+                        {item.building_name ?? item.organization}
                       </div>
                     </div>
 
@@ -434,40 +338,30 @@ function IncidentsWidget({
                       style={{
                         fontSize: 10,
                         fontWeight: 700,
-                        color: sev.color,
-                        background: sev.bg,
+                        color: SEVERITY_COLORS[item.severity],
+                        background: "#f3f5f7",
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {severityLabel(item.severity)}
+                      {SEVERITY_LABELS[item.severity]}
                     </div>
                   </div>
 
                   <div className="d-flex justify-content-between align-items-center">
-                    <div className="d-flex align-items-center gap-1">
-                      <div
-                        className="rounded-pill px-2 py-1"
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          color: stat.color,
-                          background: stat.bg,
-                        }}
-                      >
-                        {statusLabel(item.status)}
-                      </div>
-                      {unassigned && (
-                        <div
-                          className="rounded-pill px-2 py-1"
-                          style={{ fontSize: 10, fontWeight: 700, color: "#dc3545", background: "#fdecef" }}
-                        >
-                          Не назначен
-                        </div>
-                      )}
+                    <div
+                      className="rounded-pill px-2 py-1"
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: "white",
+                        background: STATUS_COLORS[item.status],
+                      }}
+                    >
+                      {STATUS_LABELS[item.status]}
                     </div>
 
                     <div className="text-muted" style={{ fontSize: 11 }}>
-                      {formatWidgetDate(item.incident_date)}
+                      {item.due_at ? formatWidgetDate(item.due_at) : ""}
                     </div>
                   </div>
                 </div>
@@ -551,15 +445,15 @@ function CalendarWidget({ events, onOpen }: { events: CalendarEvent[] | null; on
 
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const isDirector = user?.role_code === "DIRECTOR" || user?.role_code === "ADMIN";
   const [summary, setSummary] = useState<FinanceSummary | null>(null);
-  const [incidents, setIncidents] = useState<IncidentWidgetItem[] | null>(null);
+  const [tasks, setTasks] = useState<Task[] | null>(null);
   const [upcomingEvents, setUpcomingEvents] = useState<CalendarEvent[] | null>(null);
 
   useEffect(() => {
     fetchFinanceSummary().then(setSummary).catch(() => null);
-    fetchIncidentsWidget().then(setIncidents).catch(() => setIncidents([]));
+    fetchMyTasks()
+      .then((list) => setTasks(list.filter((t) => t.status !== "DONE").slice(0, 5)))
+      .catch(() => setTasks([]));
     fetchUpcomingEvents(3).then(setUpcomingEvents).catch(() => setUpcomingEvents([]));
   }, []);
 
@@ -747,11 +641,7 @@ export default function DashboardPage() {
           <div style={{ position: "sticky", top: 24 }}>
             <FinancePulse data={summary} />
             <CalendarWidget events={upcomingEvents} onOpen={() => navigate("/calendar")} />
-            <IncidentsWidget
-              items={incidents}
-              onOpen={() => navigate("/incidents")}
-              highlightUnassigned={isDirector}
-            />
+            <TasksWidget items={tasks} onOpen={() => navigate("/tasks")} />
           </div>
         </div>
       </div>

@@ -210,6 +210,7 @@ async def list_buildings(
         """
         SELECT
             b.id,
+            b.organization_id,
             b.name,
             b.address,
             b.created_at,
