@@ -10,6 +10,8 @@ from pydantic import BaseModel
 from app.api.database.db import get_connection
 from app.api.security import get_current_user
 from app.api.permissions import (
+    ORG_MANAGER_ROLES,
+    ORG_MEMBER_ROLES,
     get_user_org_ids,
     is_org_scoped_user,
     require_org_write_access,
@@ -79,7 +81,7 @@ async def upload_document(
 ):
     await require_org_write_access(
         current_user, organization_id, conn,
-        allowed_org_roles=("DIRECTOR", "STAFF"),
+        allowed_org_roles=ORG_MEMBER_ROLES,
     )
 
     org_dir = UPLOAD_DIR / str(organization_id)
@@ -138,7 +140,7 @@ async def update_document(
 
     await require_org_write_access(
         current_user, existing["organization_id"], conn,
-        allowed_org_roles=("DIRECTOR", "STAFF"),
+        allowed_org_roles=ORG_MEMBER_ROLES,
     )
 
     fields = {k: v for k, v in payload.model_dump().items() if v is not None}
@@ -190,7 +192,7 @@ async def delete_document(
 
     await require_org_write_access(
         current_user, existing["organization_id"], conn,
-        allowed_org_roles=("DIRECTOR",),
+        allowed_org_roles=ORG_MANAGER_ROLES,
     )
 
     await _log(conn, doc_id, current_user["id"], "DELETE", None)

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { disablePush, enablePush, getPushState, syncPushSubscription, type PushState } from "../utils/push";
+import { useEventSource } from "../hooks/useEventSource";
 import {
   fetchNotifications,
   markNotificationRead,
@@ -57,19 +59,48 @@ export default function NotificationBell() {
   const [data, setData] = useState<Notifications | null>(null);
   const [taskNotifications, setTaskNotifications] = useState<TaskNotification[]>([]);
   const [open, setOpen] = useState(false);
+  // на узком экране окно показываем листом во всю ширину сразу под колокольчиком
+  const [sheetTop, setSheetTop] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [pushState, setPushState] = useState<PushState | null>(null);
+  const [pushBusy, setPushBusy] = useState(false);
+
+  // Разрешение уже дано — тихо пересылаем подписку: в браузере мог смениться
+  // пользователь или на сервере пересоздаться база
+  useEffect(() => {
+    void syncPushSubscription().finally(() => {
+      void getPushState().then(setPushState);
+    });
+  }, []);
+
+  const togglePush = async () => {
+    setPushBusy(true);
+    try {
+      setPushState(pushState === "on" ? await disablePush() : await enablePush());
+    } catch {
+      setPushState(await getPushState());
+    } finally {
+      setPushBusy(false);
+    }
+  };
   const ref = useRef<HTMLDivElement>(null);
 
   // Уведомления по задачам: стартовая загрузка + живой поток
-  useEffect(() => {
+  const reloadTaskNotifications = () =>
     fetchTaskNotifications()
       .then((feed) => setTaskNotifications(feed.items))
       .catch(() => null);
 
-    const stream = new EventSource(notificationsStreamUrl(), { withCredentials: true });
-    stream.onmessage = (e) => {
+  useEffect(() => {
+    void reloadTaskNotifications();
+  }, []);
+
+  useEventSource(notificationsStreamUrl(), {
+    // поток переоткрылся после фона — за это время могли прийти уведомления
+    onOpen: (reconnect) => reconnect && void reloadTaskNotifications(),
+    onMessage: (data) => {
       try {
-        const payload = JSON.parse(e.data as string) as {
+        const payload = JSON.parse(data) as {
           type: string;
           notification?: TaskNotification;
         };
@@ -84,24 +115,15 @@ export default function NotificationBell() {
       } catch {
         // мусор в потоке игнорируем
       }
-    };
-    // Поток не закрываем: EventSource переподключается сам, а close() это отключил бы
-    // навсегда — например, после единственного 503, когда редис на секунду прилёг
-    stream.onerror = () => null;
-    return () => stream.close();
-  }, []);
+    },
+  });
 
-  useEffect(() => {
-    const es = new EventSource(`${API_URL}/data/notifications/stream`, {
-      withCredentials: true,
-    });
-    es.onmessage = (e) => {
-      try { setData(JSON.parse(e.data as string) as Notifications); }
+  useEventSource(`${API_URL}/data/notifications/stream`, {
+    onMessage: (data) => {
+      try { setData(JSON.parse(data) as Notifications); }
       catch { /* ignore */ }
-    };
-    es.onerror = () => es.close();
-    return () => es.close();
-  }, []);
+    },
+  });
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -175,7 +197,10 @@ export default function NotificationBell() {
           borderRadius: "50%",
           transition: "background 0.18s",
         }}
-        onClick={() => setOpen((p) => !p)}
+        onClick={() => {
+          setSheetTop((ref.current?.getBoundingClientRect().bottom ?? 0) + 6);
+          setOpen((p) => !p);
+        }}
         title="Уведомления"
       >
         <i className="fa fa-bell" style={{ fontSize: 17 }} />
@@ -198,8 +223,8 @@ export default function NotificationBell() {
 
       {open && (
         <div
-          className="position-absolute end-0 mt-2 bg-white rounded-4 shadow border overflow-hidden"
-          style={{ minWidth: 340, maxWidth: 380, zIndex: 1100 }}
+          className="position-absolute end-0 mt-2 bg-white rounded-4 shadow border overflow-hidden notif-dropdown"
+          style={{ minWidth: 340, maxWidth: 380, zIndex: 1100, ["--sheet-top" as string]: `${sheetTop}px` }}
         >
           <div
             className="px-3 py-2 d-flex align-items-center justify-content-between"
@@ -211,6 +236,8 @@ export default function NotificationBell() {
             </span>
             {total > 0 && <span className="badge bg-danger">{total}</span>}
           </div>
+
+          <PushSettings state={pushState} busy={pushBusy} onToggle={() => void togglePush()} />
 
           <div style={{ maxHeight: 440, overflowY: "auto" }}>
             {total === 0 && (
@@ -334,6 +361,18 @@ export default function NotificationBell() {
 
       <style>{`
         .notif-row:hover { background-color: #f4f6f8 !important; }
+        /* 340px от колокольчика влево на телефоне уезжали за край экрана */
+        @media (max-width: 575.98px) {
+          .notif-dropdown {
+            position: fixed !important;
+            top: var(--sheet-top) !important;
+            left: 8px !important;
+            right: 8px !important;
+            margin-top: 0 !important;
+            min-width: 0 !important;
+            max-width: none !important;
+          }
+        }
       `}</style>
     </div>
   );
@@ -369,6 +408,48 @@ function NotifRow({ children, onClick, onDismiss }: {
         onClick={(e) => { e.stopPropagation(); onDismiss(); }}
       >
         <i className="fa fa-xmark" />
+      </button>
+    </div>
+  );
+}
+
+/** Включение системных уведомлений на этом устройстве. */
+function PushSettings({ state, busy, onToggle }: { state: PushState | null; busy: boolean; onToggle: () => void }) {
+  if (state === null || state === "unsupported") return null;
+
+  const box = "px-3 py-2 border-bottom d-flex align-items-center gap-2";
+  const text = { fontSize: 12 };
+
+  if (state === "needs-install") {
+    return (
+      <div className={box} style={{ background: "#f8f9fa" }}>
+        <i className="fa fa-mobile-screen text-muted" />
+        <span className="text-muted" style={text}>
+          Чтобы получать уведомления на iPhone, добавьте сайт на экран «Домой»: «Поделиться» → «На экран Домой»
+        </span>
+      </div>
+    );
+  }
+
+  if (state === "denied") {
+    return (
+      <div className={box} style={{ background: "#f8f9fa" }}>
+        <i className="fa fa-bell-slash text-muted" />
+        <span className="text-muted" style={text}>
+          Уведомления запрещены в настройках браузера — разрешите их для этого сайта
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className={box} style={{ background: state === "on" ? "#f1f8f4" : "#f8f9fa" }}>
+      <i className={`fa ${state === "on" ? "fa-circle-check text-success" : "fa-desktop text-muted"}`} />
+      <span className="flex-grow-1" style={text}>
+        {state === "on" ? "Уведомления на этом устройстве включены" : "Получайте уведомления, даже когда вкладка закрыта"}
+      </span>
+      <button className="btn btn-sm btn-outline-secondary py-0 px-2" style={{ fontSize: 11 }} disabled={busy} onClick={onToggle}>
+        {busy ? <span className="spinner-border spinner-border-sm" style={{ width: 10, height: 10 }} /> : state === "on" ? "Выключить" : "Включить"}
       </button>
     </div>
   );

@@ -10,6 +10,8 @@ from app.api.database.db import get_connection
 from app.api.database import db as _db
 from app.api.security import get_current_user, get_current_user_for_stream
 from app.api.permissions import (
+    ORG_MANAGER_ROLES,
+    ORG_MEMBER_ROLES,
     get_user_org_ids,
     is_org_scoped_user,
     require_org_write_access,
@@ -452,7 +454,7 @@ async def _incident_membership_flags(current_user: dict, organization_id: int, i
     """Возвращает (is_director, is_creator, is_assignee) для проверки прав на инцидент."""
     membership = await require_org_write_access(
         current_user, organization_id, conn,
-        allowed_org_roles=("DIRECTOR", "STAFF"),
+        allowed_org_roles=ORG_MEMBER_ROLES,
     )
     is_director = membership is None or membership["org_role_code"] == "DIRECTOR"
     is_creator = created_by_user_id is not None and current_user["id"] == created_by_user_id
@@ -601,7 +603,7 @@ async def update_employee(
         current_user,
         existing["organization_id"],
         conn,
-        allowed_org_roles=("DIRECTOR", "STAFF"),
+        allowed_org_roles=ORG_MEMBER_ROLES,
     )
 
     if payload.fio is not None:
@@ -675,7 +677,7 @@ async def update_organization(
         current_user,
         org_id,
         conn,
-        allowed_org_roles=("DIRECTOR",),
+        allowed_org_roles=ORG_MANAGER_ROLES,
     )
 
     fields = {k: v for k, v in payload.model_dump().items() if v is not None}
@@ -724,7 +726,7 @@ async def update_building(
         current_user,
         existing["organization_id"],
         conn,
-        allowed_org_roles=("DIRECTOR",),
+        allowed_org_roles=ORG_MANAGER_ROLES,
     )
 
     fields = {k: v for k, v in payload.model_dump().items() if v is not None}
@@ -885,7 +887,7 @@ async def delete_incident(
         current_user,
         existing["organization_id"],
         conn,
-        allowed_org_roles=("DIRECTOR",),
+        allowed_org_roles=ORG_MANAGER_ROLES,
     )
 
     await conn.execute(
@@ -1010,7 +1012,7 @@ async def create_event(
 ):
     await require_org_write_access(
         current_user, payload.organization_id, conn,
-        allowed_org_roles=("DIRECTOR", "STAFF"),
+        allowed_org_roles=ORG_MEMBER_ROLES,
     )
 
     event = await conn.fetchrow(
@@ -1049,7 +1051,7 @@ async def update_event(
 
     await require_org_write_access(
         current_user, existing["organization_id"], conn,
-        allowed_org_roles=("DIRECTOR", "STAFF"),
+        allowed_org_roles=ORG_MEMBER_ROLES,
     )
 
     raw = payload.model_dump(exclude={"participant_ids"})
@@ -1087,7 +1089,7 @@ async def delete_event(
 
     await require_org_write_access(
         current_user, existing["organization_id"], conn,
-        allowed_org_roles=("DIRECTOR", "STAFF"),
+        allowed_org_roles=ORG_MEMBER_ROLES,
     )
     await conn.execute("DELETE FROM events WHERE id = $1", event_id)
     return {"ok": True}

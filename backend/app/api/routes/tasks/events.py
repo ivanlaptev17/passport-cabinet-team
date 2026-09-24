@@ -18,7 +18,8 @@
 import json
 from typing import Iterable
 
-from app.api import redis_client
+from app.api import push, redis_client
+from app.api.permissions import ORG_TASK_SUPERVISOR_ROLES
 
 
 # ── Выборки (переиспользуются ручками чата и уведомлений) ─────────────────────
@@ -41,6 +42,7 @@ MESSAGE_SELECT = """
         m.file_size,
         m.file_mime,
         (m.file_path IS NOT NULL) AS has_file,
+        (m.file_thumb_path IS NOT NULL) AS has_preview,
         m.created_at
     FROM task_messages m
     LEFT JOIN users au ON au.id = m.author_user_id
@@ -81,16 +83,19 @@ async def task_audience(conn, task: dict) -> set[int]:
 
 
 async def org_supervisors(conn, organization_id: int) -> set[int]:
-    """Ответственный ОО и Администратор ОО — им уходит задача на проверку."""
+    """Те, кто закрывает задачи: Ответственный, Директор и Администратор ОО.
+
+    Им уходит задача на проверку — ровно тем, кто может перевести её в «Завершена».
+    """
     rows = await conn.fetch(
         """
         SELECT user_id
         FROM organization_memberships
         WHERE organization_id = $1
           AND is_active = TRUE
-          AND org_role_code IN ('RESPONSIBLE', 'DIRECTOR')
+          AND org_role_code = ANY($2::text[])
         """,
-        organization_id,
+        organization_id, list(ORG_TASK_SUPERVISOR_ROLES),
     )
     return {r["user_id"] for r in rows}
 
@@ -110,15 +115,16 @@ async def _insert_message(
     file_name: str | None = None,
     file_size: int | None = None,
     file_mime: str | None = None,
+    file_thumb_path: str | None = None,
 ) -> dict:
     row = await conn.fetchrow(
         """
         INSERT INTO task_messages (
             task_id, message_type, author_user_id, body,
             event_type, event_payload,
-            file_path, file_name, file_size, file_mime
+            file_path, file_name, file_size, file_mime, file_thumb_path
         )
-        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10)
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11)
         RETURNING id
         """,
         task_id,
@@ -131,6 +137,7 @@ async def _insert_message(
         file_name,
         file_size,
         file_mime,
+        file_thumb_path,
     )
     message = await conn.fetchrow(f"{MESSAGE_SELECT} WHERE m.id = $1", row["id"])
     return dict(message)
@@ -315,9 +322,20 @@ async def notify(
 
 
 async def publish_events(task_id: int, events: list[tuple[str, dict]]) -> None:
-    """Рассылка после коммита: сбрасываем кэш истории и публикуем в каналы."""
+    """Рассылка после коммита: сбрасываем кэш истории, публикуем в каналы
+    и отправляем push на устройства — тем, у кого вкладка закрыта."""
     if not events:
         return
     await redis_client.cache_drop(redis_client.task_messages_cache_key(task_id))
+
+    messages: dict[int, dict] = {}
+    notifications: list[dict] = []
     for channel, payload in events:
         await redis_client.publish(channel, payload)
+        if payload["type"] == "message":
+            messages[payload["message"]["id"]] = payload["message"]
+        elif payload["type"] == "notification":
+            notifications.append(payload["notification"])
+
+    # В фоне: отправка через внешние push-сервисы не должна задерживать ответ
+    push.schedule_notifications(notifications, messages)

@@ -7,6 +7,30 @@ GLOBAL_FULL_ACCESS_ROLES = {"ADMIN"}
 GLOBAL_READONLY_ROLES = {"MINOBR"}
 ORG_SCOPED_ROLES = {"DIRECTOR", "SCHOOL_STAFF"}
 
+# ── Роли внутри организации (organization_memberships.org_role_code) ──────────
+ORG_ADMIN = "ORG_ADMIN"              # Администратор ОО: здания, роли сотрудников
+ORG_DIRECTOR = "DIRECTOR"            # Директор ОО
+ORG_RESPONSIBLE = "RESPONSIBLE"      # Ответственный ОО
+ORG_STAFF = "STAFF"                  # Сотрудник ОО
+
+# Любой действующий сотрудник организации. Раньше разделы проверяли только
+# DIRECTOR и STAFF, и с появлением новых ролей их носители теряли доступ —
+# поэтому набор теперь один на всех
+ORG_MEMBER_ROLES = (ORG_DIRECTOR, ORG_STAFF, ORG_RESPONSIBLE, ORG_ADMIN)
+
+# Видят все задачи организации и могут их закрывать
+ORG_TASK_SUPERVISOR_ROLES = (ORG_DIRECTOR, ORG_RESPONSIBLE, ORG_ADMIN)
+
+# Управляют самой организацией: здания, права сотрудников
+ORG_MANAGER_ROLES = (ORG_DIRECTOR, ORG_ADMIN)
+
+ORG_ROLE_LABELS = {
+    ORG_ADMIN: "Администратор ОО",
+    ORG_DIRECTOR: "Директор ОО",
+    ORG_RESPONSIBLE: "Ответственный ОО",
+    ORG_STAFF: "Сотрудник ОО",
+}
+
 
 def has_global_full_access(current_user: dict) -> bool:
     return current_user.get("role_code") in GLOBAL_FULL_ACCESS_ROLES

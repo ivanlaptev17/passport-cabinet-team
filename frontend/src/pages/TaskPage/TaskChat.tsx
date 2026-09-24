@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  errorText,
   fetchMessages,
   markChatRead,
   messageFileUrl,
+  messageInlineUrl,
+  messagePreviewUrl,
   parseJson,
   postMessage,
   postMessageWithFile,
@@ -12,11 +15,59 @@ import {
   type TaskMessage,
   type TaskStatus,
 } from "../../api/tasks";
+import { useEventSource } from "../../hooks/useEventSource";
 
 type Props = {
   taskId: number;
   currentUserId: number | null;
+  /** Минобр и посторонние читают чат, но не пишут */
+  canWrite: boolean;
 };
+
+/** Картинка во весь экран: открывается по нажатию на превью в чате или в файлах задачи. */
+export function ImageViewer({
+  taskId,
+  messageId,
+  fileName,
+  onClose,
+}: {
+  taskId: number;
+  messageId: number;
+  fileName: string | null;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="position-fixed top-0 start-0 w-100 h-100 d-flex flex-column"
+      style={{ background: "rgba(0,0,0,0.88)", zIndex: 2000 }}
+      onClick={onClose}
+    >
+      <div className="d-flex align-items-center gap-2 p-3 text-white" onClick={(e) => e.stopPropagation()}>
+        <span className="text-truncate flex-grow-1" style={{ fontSize: 14 }}>{fileName}</span>
+        <a href={messageFileUrl(taskId, messageId)} className="btn btn-sm btn-outline-light" title="Скачать">
+          <i className="fa fa-download" />
+        </a>
+        <button className="btn btn-sm btn-outline-light" title="Закрыть" onClick={onClose}>
+          <i className="fa fa-xmark" />
+        </button>
+      </div>
+      <div className="flex-grow-1 d-flex align-items-center justify-content-center p-3" style={{ minHeight: 0 }}>
+        <img
+          src={messageInlineUrl(taskId, messageId)}
+          alt={fileName ?? ""}
+          style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
+          onClick={(e) => e.stopPropagation()}
+        />
+      </div>
+    </div>
+  );
+}
 
 type SystemPayload = {
   user_id?: number;
@@ -34,10 +85,11 @@ function systemText(message: TaskMessage): string {
   switch (message.event_type) {
     case "TASK_CREATED":
       return "Задача создана";
+    // подлежащее — «участник», тогда род не зависит от того, кого добавили
     case "PARTICIPANT_ADDED":
-      return `${who || "Участник"} добавлен в задачу`;
+      return who ? `В задачу добавлен участник: ${who}` : "В задачу добавлен участник";
     case "PARTICIPANT_REMOVED":
-      return `${who || "Участник"} удалён из задачи`;
+      return who ? `Из задачи убран участник: ${who}` : "Из задачи убран участник";
     case "STATUS_CHANGED": {
       const from = STATUS_LABELS[payload.from as TaskStatus] ?? payload.from ?? "";
       const to = STATUS_LABELS[payload.to as TaskStatus] ?? payload.to ?? "";
@@ -63,7 +115,7 @@ function formatSize(bytes: number | null) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
 }
 
-export default function TaskChat({ taskId, currentUserId }: Props) {
+export default function TaskChat({ taskId, currentUserId, canWrite }: Props) {
   const [messages, setMessages] = useState<TaskMessage[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [cursor, setCursor] = useState<number | null>(null);
@@ -72,6 +124,7 @@ export default function TaskChat({ taskId, currentUserId }: Props) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
   const [live, setLive] = useState(false);
+  const [viewer, setViewer] = useState<TaskMessage | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -105,24 +158,28 @@ export default function TaskChat({ taskId, currentUserId }: Props) {
   }, [taskId]);
 
   // Живой поток: сервер присылает новые сообщения сам, опрашивать не нужно
-  useEffect(() => {
-    const source = new EventSource(taskChatStreamUrl(taskId), { withCredentials: true });
-
-    source.onopen = () => setLive(true);
-    source.onmessage = (event) => {
+  useEventSource(taskChatStreamUrl(taskId), {
+    onOpen: (reconnect) => {
+      setLive(true);
+      // пока потока не было (вкладка в фоне, обрыв связи), могли написать — дотягиваем
+      if (reconnect) {
+        void fetchMessages(taskId)
+          .then((page) => addMessages(page.messages, "end"))
+          .catch(() => null);
+      }
+    },
+    onMessage: (data) => {
       try {
-        const payload = JSON.parse(event.data as string) as { type: string; message?: TaskMessage };
+        const payload = JSON.parse(data) as { type: string; message?: TaskMessage };
         if (payload.type === "message" && payload.message) {
           addMessages([payload.message], "end");
         }
       } catch {
         // мусор в потоке игнорируем
       }
-    };
-    source.onerror = () => setLive(false);
-
-    return () => source.close();
-  }, [taskId, addMessages]);
+    },
+    onError: () => setLive(false),
+  });
 
   // Вниз мотаем только когда пришло новое сообщение в конец.
   // По длине списка ориентироваться нельзя: подгрузка старых тоже её увеличивает
@@ -168,16 +225,19 @@ export default function TaskChat({ taskId, currentUserId }: Props) {
       addMessages([message], "end");
       setDraft("");
     } catch (e) {
-      setError(
-        (e as Error).message === "413" ? "Файл больше 25 МБ" : "Файл не отправлен",
-      );
+      setError(errorText(e, "Файл не отправлен"));
     } finally {
       setSending(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
-  let lastDay = "";
+  // Первое сообщение каждого дня — над ним рисуем дату
+  const dayStarts = new Set(
+    messages
+      .filter((m, i) => i === 0 || formatDay(m.created_at) !== formatDay(messages[i - 1].created_at))
+      .map((m) => m.id),
+  );
 
   return (
     <div className="card border-0 shadow-sm rounded-4">
@@ -199,8 +259,7 @@ export default function TaskChat({ taskId, currentUserId }: Props) {
 
         {messages.map((message) => {
           const day = formatDay(message.created_at);
-          const showDay = day !== lastDay;
-          lastDay = day;
+          const showDay = dayStarts.has(message.id);
 
           const isSystem = message.message_type === "SYSTEM";
           const isOwn = !isSystem && message.author_user_id === currentUserId;
@@ -254,7 +313,27 @@ export default function TaskChat({ taskId, currentUserId }: Props) {
                       <div style={{ fontSize: 14, whiteSpace: "pre-wrap" }}>{message.body}</div>
                     )}
 
-                    {message.has_file && (
+                    {message.has_preview && (
+                      <button
+                        type="button"
+                        className="btn p-0 border-0 d-block mt-1"
+                        title="Открыть"
+                        onClick={() => setViewer(message)}
+                      >
+                        <img
+                          src={messagePreviewUrl(taskId, message.id)}
+                          alt={message.file_name ?? ""}
+                          loading="lazy"
+                          className="rounded-3"
+                          style={{ maxWidth: "min(260px, 60vw)", maxHeight: 260, display: "block", objectFit: "cover" }}
+                          // картинка догрузилась и выросла в высоту — докручиваем, но только
+                          // у последнего сообщения: старые при подгрузке истории экран не дёргают
+                          onLoad={() => message.id === lastMessageId && bottomRef.current?.scrollIntoView({ block: "end" })}
+                        />
+                      </button>
+                    )}
+
+                    {message.has_file && !message.has_preview && (
                       <a
                         href={messageFileUrl(taskId, message.id)}
                         target="_blank"
@@ -286,7 +365,14 @@ export default function TaskChat({ taskId, currentUserId }: Props) {
       <div className="card-footer bg-white border-top rounded-bottom-4">
         {error && <div className="text-danger mb-2" style={{ fontSize: 12 }}>{error}</div>}
 
-        <div className="d-flex align-items-center gap-2">
+        {!canWrite && (
+          <div className="text-muted text-center" style={{ fontSize: 13 }}>
+            <i className="fa fa-eye me-1" />
+            Переписка доступна только для чтения
+          </div>
+        )}
+
+        <div className={`align-items-center gap-2 ${canWrite ? "d-flex" : "d-none"}`}>
           <button
             className="btn btn-sm btn-outline-secondary rounded-circle flex-shrink-0"
             style={{ width: 36, height: 36 }}
@@ -341,6 +427,15 @@ export default function TaskChat({ taskId, currentUserId }: Props) {
           </div>
         )}
       </div>
+
+      {viewer && (
+        <ImageViewer
+          taskId={taskId}
+          messageId={viewer.id}
+          fileName={viewer.file_name}
+          onClose={() => setViewer(null)}
+        />
+      )}
     </div>
   );
 }

@@ -12,6 +12,7 @@ import EducationPage from "../pages/EducationPage";
 import CalendarPage from "../pages/CalendarPage";
 import TasksPage from "../pages/TasksPage/index";
 import TaskPage from "../pages/TaskPage/index";
+import OrgAdminPage from "../pages/OrgAdminPage/index";
 import DocumentsPage from "../pages/DocumentsPage/index";
 import DocumentTemplatesPage from "../pages/DocumentTemplatesPage/index";
 import ProfilePage from "../pages/ProfilePage/index";
@@ -53,6 +54,7 @@ function AppRoutes() {
       <Route path="/calendar"     element={<AuthGuard element={<CalendarPage />} />} />
       <Route path="/tasks"        element={<AuthGuard element={<TasksPage />} />} />
       <Route path="/tasks/:taskId" element={<AuthGuard element={<TaskPage />} />} />
+      <Route path="/org-admin"    element={<AuthGuard element={<OrgAdminPage />} />} />
       {/* Инциденты переехали в задачи — старые ссылки не роняем */}
       <Route path="/incidents"    element={<Navigate to="/tasks" replace />} />
       <Route path="/documents"    element={<AuthGuard element={<DocumentsPage />} />} />

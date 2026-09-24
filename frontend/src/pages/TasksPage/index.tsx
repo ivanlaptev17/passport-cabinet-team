@@ -2,10 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "../../components/Layout";
 import DateField from "../../components/DateField";
+import ParticipantPicker from "../../components/ParticipantPicker";
+import TagPicker, { TagChips } from "../../components/TagPicker";
+import { useTaskContext } from "../../hooks/useTaskContext";
 import {
   createTask,
+  errorText,
   fetchMyTasks,
   fetchOrgTasks,
+  fetchTaskOrgUsers,
+  taskCategories,
   taskParticipants,
   SEVERITY_COLORS,
   SEVERITY_LABELS,
@@ -13,16 +19,12 @@ import {
   STATUS_LABELS,
   TASK_SEVERITIES,
   TASK_STATUSES,
+  type ContextOrganization,
   type Task,
   type TaskSeverity,
   type TaskStatus,
 } from "../../api/tasks";
-import {
-  fetchBuildings,
-  fetchOrganizations,
-  type Building,
-  type Organization,
-} from "../../api/data";
+import { fetchBuildings, type Building } from "../../api/data";
 
 type Scope = "my" | "org";
 
@@ -40,8 +42,9 @@ function isOverdue(task: Task) {
   return !!task.due_at && task.status !== "DONE" && new Date(task.due_at) < new Date();
 }
 
-export function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
+export function TaskCard({ task, showOrganization, onOpen }: { task: Task; showOrganization: boolean; onOpen: () => void }) {
   const participants = taskParticipants(task);
+  const tags = taskCategories(task);
   const overdue = isOverdue(task);
   const due = dueLabel(task.due_at);
 
@@ -54,12 +57,7 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
       <div className="d-flex align-items-start gap-2">
         <span
           className="rounded-circle flex-shrink-0"
-          style={{
-            width: 10,
-            height: 10,
-            marginTop: 6,
-            background: SEVERITY_COLORS[task.severity] ?? "#adb5bd",
-          }}
+          style={{ width: 10, height: 10, marginTop: 6, background: SEVERITY_COLORS[task.severity] ?? "#adb5bd" }}
           title={SEVERITY_LABELS[task.severity]}
         />
         <div className="flex-grow-1" style={{ minWidth: 0 }}>
@@ -68,20 +66,22 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
           </div>
 
           <div className="d-flex align-items-center flex-wrap gap-2 mt-2">
-            <span
-              className="badge rounded-pill"
-              style={{ background: STATUS_COLORS[task.status], fontSize: 11, fontWeight: 500 }}
-            >
+            <span className="badge rounded-pill" style={{ background: STATUS_COLORS[task.status], fontSize: 11, fontWeight: 500 }}>
               {STATUS_LABELS[task.status]}
             </span>
-
+            <TagChips tags={tags} />
+            {showOrganization && (
+              <span className="text-muted" style={{ fontSize: 12 }}>
+                <i className="fa fa-school me-1" />
+                {task.organization}
+              </span>
+            )}
             {task.building_name && (
               <span className="text-muted" style={{ fontSize: 12 }}>
                 <i className="fa fa-building me-1" />
                 {task.building_name}
               </span>
             )}
-
             {participants.length > 0 && (
               <span className="text-muted" style={{ fontSize: 12 }}>
                 <i className="fa fa-user me-1" />
@@ -107,14 +107,16 @@ export function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
 
 export default function TasksPage() {
   const navigate = useNavigate();
+  const ctx = useTaskContext();
 
-  const [scope, setScope] = useState<Scope>("my");
+  const [scope, setScope] = useState<Scope | null>(null);
+  const [orgId, setOrgId] = useState<number | "">("");
   const [myTasks, setMyTasks] = useState<Task[]>([]);
   const [orgTasks, setOrgTasks] = useState<Task[]>([]);
-  const [canSeeOrg, setCanSeeOrg] = useState(false);
-  const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [loading, setLoading] = useState(true);
+  // для какой организации уже загружены «Задачи ОО» — по нему понимаем, идёт ли загрузка
+  const [orgTasksFor, setOrgTasksFor] = useState<number | null>(null);
   const [error, setError] = useState("");
 
   const [showDone, setShowDone] = useState(false);
@@ -122,66 +124,84 @@ export default function TasksPage() {
   const [severityFilter, setSeverityFilter] = useState<TaskSeverity | "">("");
   const [buildingFilter, setBuildingFilter] = useState<number | "">("");
   const [search, setSearch] = useState("");
-
   const [createOpen, setCreateOpen] = useState(false);
 
-  const primaryOrg = organizations[0];
+  const organizations = useMemo(() => ctx?.organizations ?? [], [ctx]);
+  const supervised = useMemo(() => organizations.filter((o) => o.can_view_all), [organizations]);
+  const writable = useMemo(() => organizations.filter((o) => o.can_write), [organizations]);
+  const multiOrg = organizations.length > 1;
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const [mine, orgs, blds] = await Promise.all([
-        fetchMyTasks(),
-        fetchOrganizations(),
-        fetchBuildings(),
-      ]);
-      setMyTasks(mine);
-      setOrganizations(orgs);
-      setBuildings(blds);
+  // Вкладка по умолчанию, пока пользователь её не выбрал: у глобального администратора
+  // и Минобра своих задач нет вовсе — им сразу показываем задачи организации
+  const defaultScope: Scope | null = !ctx
+    ? null
+    : !ctx.organizations.some((o) => o.org_role_code) && supervised.length > 0
+      ? "org"
+      : "my";
+  const activeScope = scope ?? defaultScope;
 
-      // Вкладка «Задачи ОО» есть только у Ответственного и Администратора ОО.
-      // Роль внутри организации фронту не видна, поэтому просто пробуем ручку
-      if (orgs[0]) {
-        try {
-          setOrgTasks(await fetchOrgTasks(orgs[0].id));
-          setCanSeeOrg(true);
-        } catch {
-          setCanSeeOrg(false);
-        }
-      }
-    } catch (e) {
-      if ((e as Error).message === "401") navigate("/");
-      else setError("Не удалось загрузить задачи");
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    Promise.all([fetchMyTasks(), fetchBuildings()])
+      .then(([mine, blds]) => {
+        setMyTasks(mine);
+        setBuildings(blds);
+      })
+      .catch((e) => {
+        if ((e as Error).message === "401") navigate("/");
+        else setError("Не удалось загрузить задачи");
+      })
+      .finally(() => setLoading(false));
+  }, [navigate]);
+
+  // Задачи ОО всегда показываются по одной конкретной организации
+  const orgScopeId = activeScope === "org" ? (orgId === "" ? supervised[0]?.id : orgId) : undefined;
+  const orgLoading = orgScopeId !== undefined && orgTasksFor !== orgScopeId;
+  useEffect(() => {
+    if (orgScopeId === undefined) return;
+    let alive = true;
+    fetchOrgTasks(orgScopeId)
+      .catch(() => [] as Task[])
+      .then((list) => {
+        if (!alive) return;
+        setOrgTasks(list);
+        setOrgTasksFor(orgScopeId);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [orgScopeId]);
+
+  const switchScope = (next: Scope) => {
+    setScope(next);
+    setBuildingFilter("");
+    // в «Задачах ОО» пункта «все организации» нет — подставляем доступную
+    if (next === "org" && (orgId === "" || !supervised.some((o) => o.id === orgId))) {
+      setOrgId(supervised[0]?.id ?? "");
     }
   };
 
-  useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const tasks = scope === "my" ? myTasks : orgTasks;
+  const tasks = activeScope === "org" ? orgTasks : myTasks;
+  const selectedOrg = activeScope === "org" ? orgScopeId : orgId === "" ? undefined : orgId;
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     return tasks.filter((t) => {
+      if (selectedOrg !== undefined && t.organization_id !== selectedOrg) return false;
       if (!showDone && t.status === "DONE") return false;
       if (statusFilter && t.status !== statusFilter) return false;
       if (severityFilter && t.severity !== severityFilter) return false;
       if (buildingFilter && t.building_id !== buildingFilter) return false;
-      if (q && !t.title.toLowerCase().includes(q) && !(t.description ?? "").toLowerCase().includes(q)) {
-        return false;
-      }
+      if (q && !t.title.toLowerCase().includes(q) && !(t.description ?? "").toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [tasks, showDone, statusFilter, severityFilter, buildingFilter, search]);
+  }, [tasks, selectedOrg, showDone, statusFilter, severityFilter, buildingFilter, search]);
 
   const orgBuildings = useMemo(
-    () => buildings.filter((b) => !primaryOrg || b.organization_id === primaryOrg.id),
-    [buildings, primaryOrg],
+    () => (selectedOrg === undefined ? [] : buildings.filter((b) => b.organization_id === selectedOrg)),
+    [buildings, selectedOrg],
   );
+
+  const orgOptions: ContextOrganization[] = activeScope === "org" ? supervised : organizations;
 
   return (
     <Layout>
@@ -192,11 +212,11 @@ export default function TasksPage() {
             <small className="text-muted">Задачи организации и ваши поручения</small>
           </div>
           <button
-            className="btn btn-sm text-white border-0 px-3 py-2 rounded-pill shadow-sm"
+            className="btn btn-sm text-white border-0 px-3 py-2 rounded-pill shadow-sm text-nowrap flex-shrink-0"
             style={{ background: "linear-gradient(135deg, #37474f, #546e7a)", fontWeight: 600 }}
-            // Без организации задачу создать не в чем — кнопка не должна молча ничего не делать
-            disabled={loading || !primaryOrg}
-            title={!loading && !primaryOrg ? "Вы не привязаны ни к одной организации" : undefined}
+            // Без организации, где можно работать, задачу создать негде — кнопка не должна молча ничего не делать
+            disabled={!ctx || writable.length === 0}
+            title={ctx && writable.length === 0 ? "Создавать задачи могут сотрудники организации" : undefined}
             onClick={() => setCreateOpen(true)}
           >
             <i className="fa fa-plus me-2" />
@@ -204,14 +224,14 @@ export default function TasksPage() {
           </button>
         </div>
 
-        {canSeeOrg && (
+        {supervised.length > 0 && (
           <ul className="nav nav-pills gap-2 mb-3">
             {(["my", "org"] as Scope[]).map((s) => (
               <li className="nav-item" key={s}>
                 <button
-                  className={`nav-link px-3 py-1 ${scope === s ? "active" : "text-dark bg-light"}`}
-                  style={scope === s ? { background: "#37474f" } : undefined}
-                  onClick={() => setScope(s)}
+                  className={`nav-link px-3 py-1 ${activeScope === s ? "active" : "text-dark bg-light"}`}
+                  style={activeScope === s ? { background: "#37474f" } : undefined}
+                  onClick={() => switchScope(s)}
                 >
                   {s === "my" ? "Мои задачи" : "Задачи ОО"}
                 </button>
@@ -229,6 +249,25 @@ export default function TasksPage() {
               onChange={(e) => setSearch(e.target.value)}
             />
             <div className="d-flex flex-wrap gap-2">
+              {(multiOrg || activeScope === "org") && orgOptions.length > 0 && (
+                <select
+                  className="form-select form-select-sm"
+                  style={{ maxWidth: 220 }}
+                  value={activeScope === "org" ? (orgScopeId ?? "") : orgId}
+                  onChange={(e) => {
+                    setOrgId(e.target.value ? Number(e.target.value) : "");
+                    setBuildingFilter("");
+                  }}
+                >
+                  {activeScope !== "org" && <option value="">Все организации</option>}
+                  {orgOptions.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+
               <select
                 className="form-select form-select-sm"
                 style={{ maxWidth: 180 }}
@@ -289,7 +328,7 @@ export default function TasksPage() {
           </div>
         </div>
 
-        {loading && (
+        {(loading || orgLoading || activeScope === null) && (
           <div className="text-center py-5">
             <div className="spinner-border text-secondary" />
           </div>
@@ -297,7 +336,7 @@ export default function TasksPage() {
 
         {error && <div className="alert alert-danger">{error}</div>}
 
-        {!loading && !error && visible.length === 0 && (
+        {!loading && !orgLoading && activeScope !== null && !error && visible.length === 0 && (
           <div className="text-center text-muted py-5">
             <i className="fa fa-clipboard-check d-block mb-2" style={{ fontSize: 28, opacity: 0.4 }} />
             Задач нет
@@ -305,14 +344,22 @@ export default function TasksPage() {
         )}
 
         {!loading &&
+          !orgLoading &&
           visible.map((task) => (
-            <TaskCard key={task.id} task={task} onOpen={() => navigate(`/tasks/${task.id}`)} />
+            <TaskCard
+              key={task.id}
+              task={task}
+              showOrganization={multiOrg && selectedOrg === undefined}
+              onOpen={() => navigate(`/tasks/${task.id}`)}
+            />
           ))}
       </div>
 
-      {createOpen && primaryOrg && (
+      {createOpen && ctx && writable.length > 0 && (
         <CreateTaskModal
-          organizations={organizations}
+          organizations={writable}
+          defaultOrganizationId={typeof selectedOrg === "number" && writable.some((o) => o.id === selectedOrg) ? selectedOrg : writable[0].id}
+          currentUserId={ctx.user_id}
           buildings={buildings}
           onClose={() => setCreateOpen(false)}
           onCreated={(task) => {
@@ -330,29 +377,62 @@ export default function TasksPage() {
   );
 }
 
-
 function CreateTaskModal({
   organizations,
+  defaultOrganizationId,
+  currentUserId,
   buildings,
   onClose,
   onCreated,
 }: {
-  organizations: Organization[];
+  organizations: ContextOrganization[];
+  defaultOrganizationId: number;
+  currentUserId: number;
   buildings: Building[];
   onClose: () => void;
   onCreated: (task: Task) => void;
 }) {
-  const [organizationId, setOrganizationId] = useState<number>(organizations[0]?.id ?? 0);
+  const [organizationId, setOrganizationId] = useState<number>(defaultOrganizationId);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [severity, setSeverity] = useState<TaskSeverity>("MEDIUM");
   const [buildingId, setBuildingId] = useState<number | "">("");
   const [dueDate, setDueDate] = useState("");
   const [dueTime, setDueTime] = useState("");
+  const [categoryIds, setCategoryIds] = useState<number[]>([]);
+  const [participantIds, setParticipantIds] = useState<number[]>([]);
+  const [participantNames, setParticipantNames] = useState<Record<number, string>>({});
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   const orgBuildings = buildings.filter((b) => b.organization_id === organizationId);
+
+  // Имена для чипов выбранных участников — берём из того же списка, что и выбор
+  useEffect(() => {
+    let alive = true;
+    fetchTaskOrgUsers(organizationId)
+      .then((groups) => {
+        if (!alive) return;
+        const names: Record<number, string> = {};
+        for (const g of groups) {
+          for (const u of g.users) names[u.id] = [u.last_name, u.first_name].filter(Boolean).join(" ") || u.email;
+        }
+        setParticipantNames(names);
+      })
+      .catch(() => null);
+    return () => {
+      alive = false;
+    };
+  }, [organizationId]);
+
+  const changeOrganization = (id: number) => {
+    // здания, теги и люди у каждой организации свои
+    setOrganizationId(id);
+    setBuildingId("");
+    setCategoryIds([]);
+    setParticipantIds([]);
+  };
 
   const save = async () => {
     if (!title.trim()) {
@@ -369,18 +449,23 @@ function CreateTaskModal({
         severity,
         building_id: buildingId === "" ? null : buildingId,
         due_at: dueDate ? `${dueDate}T${dueTime || "18:00"}:00` : null,
+        participant_user_ids: participantIds,
+        category_ids: categoryIds,
       });
       onCreated(task);
-    } catch {
-      setError("Не удалось создать задачу");
+    } catch (e) {
+      setError(errorText(e, "Не удалось создать задачу"));
     } finally {
       setSaving(false);
     }
   };
 
+  // Окно выбора участников — соседом, а не внутри подложки: иначе клик по его
+  // подложке всплыл бы до подложки формы и закрыл её вместе с введёнными данными
   return (
+    <>
     <div className="modal show d-block" style={{ background: "rgba(0,0,0,0.45)" }} onClick={onClose}>
-      <div className="modal-dialog modal-dialog-centered" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-dialog modal-dialog-centered modal-dialog-scrollable" onClick={(e) => e.stopPropagation()}>
         <div className="modal-content rounded-4 border-0">
           <div className="modal-header" style={{ background: "#37474f", color: "white" }}>
             <h6 className="modal-title mb-0 fw-semibold">
@@ -394,12 +479,7 @@ function CreateTaskModal({
             {error && <div className="alert alert-danger py-2">{error}</div>}
 
             <label className="form-label small fw-semibold">Название задачи</label>
-            <input
-              className="form-control mb-3"
-              value={title}
-              autoFocus
-              onChange={(e) => setTitle(e.target.value)}
-            />
+            <input className="form-control mb-3" value={title} autoFocus onChange={(e) => setTitle(e.target.value)} />
 
             {organizations.length > 1 && (
               <>
@@ -407,10 +487,7 @@ function CreateTaskModal({
                 <select
                   className="form-select mb-3"
                   value={organizationId}
-                  onChange={(e) => {
-                    setOrganizationId(Number(e.target.value));
-                    setBuildingId("");
-                  }}
+                  onChange={(e) => changeOrganization(Number(e.target.value))}
                 >
                   {organizations.map((o) => (
                     <option key={o.id} value={o.id}>
@@ -445,12 +522,7 @@ function CreateTaskModal({
                 <DateField value={dueDate} onChange={setDueDate} />
               </div>
               <div className="col-5">
-                <input
-                  type="time"
-                  className="form-control"
-                  value={dueTime}
-                  onChange={(e) => setDueTime(e.target.value)}
-                />
+                <input type="time" className="form-control" value={dueTime} onChange={(e) => setDueTime(e.target.value)} />
               </div>
             </div>
 
@@ -460,9 +532,7 @@ function CreateTaskModal({
                 <button
                   key={s}
                   type="button"
-                  className={`btn btn-sm rounded-pill flex-grow-1 ${
-                    severity === s ? "text-white" : "btn-outline-secondary"
-                  }`}
+                  className={`btn btn-sm rounded-pill flex-grow-1 ${severity === s ? "text-white" : "btn-outline-secondary"}`}
                   style={severity === s ? { background: SEVERITY_COLORS[s], border: "none" } : undefined}
                   onClick={() => setSeverity(s)}
                 >
@@ -471,25 +541,50 @@ function CreateTaskModal({
               ))}
             </div>
 
+            <label className="form-label small fw-semibold">Теги</label>
+            <div className="mb-3">
+              <TagPicker key={organizationId} organizationId={organizationId} selected={categoryIds} onChange={setCategoryIds} />
+            </div>
+
             <label className="form-label small fw-semibold">Описание задачи</label>
-            <textarea
-              className="form-control"
-              rows={3}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
+            <textarea className="form-control mb-3" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
+
+            <div className="d-flex justify-content-between align-items-center mb-2">
+              <label className="form-label small fw-semibold mb-0">Участники</label>
+              <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setPickerOpen(true)}>
+                <i className="fa fa-user-plus me-1" />
+                Добавить участника
+              </button>
+            </div>
+            {participantIds.length === 0 ? (
+              <div className="text-muted" style={{ fontSize: 13 }}>
+                Можно назначить сразу или позже, на экране задачи
+              </div>
+            ) : (
+              <div className="d-flex flex-wrap gap-2">
+                {participantIds.map((id) => (
+                  <span key={id} className="badge rounded-pill text-dark border d-inline-flex align-items-center gap-1" style={{ background: "#eceff1", fontWeight: 500 }}>
+                    {participantNames[id] ?? `#${id}`}
+                    <button
+                      type="button"
+                      className="btn btn-link p-0 text-muted"
+                      style={{ fontSize: 11, lineHeight: 1 }}
+                      title="Убрать"
+                      onClick={() => setParticipantIds((prev) => prev.filter((x) => x !== id))}
+                    >
+                      <i className="fa fa-xmark" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="modal-footer">
             <button className="btn btn-sm btn-secondary" onClick={onClose}>
               Отмена
             </button>
-            <button
-              className="btn btn-sm text-white"
-              style={{ background: "#37474f" }}
-              disabled={saving}
-              onClick={() => void save()}
-            >
+            <button className="btn btn-sm text-white" style={{ background: "#37474f" }} disabled={saving} onClick={() => void save()}>
               {saving && <span className="spinner-border spinner-border-sm me-1" />}
               Создать
             </button>
@@ -497,5 +592,17 @@ function CreateTaskModal({
         </div>
       </div>
     </div>
+
+    {pickerOpen && (
+      <ParticipantPicker
+        organizationId={organizationId}
+        selected={participantIds}
+        // автор — это вы: себя в участники не добавляют
+        hiddenIds={[currentUserId]}
+        onClose={() => setPickerOpen(false)}
+        onSave={(ids) => setParticipantIds(ids.filter((id) => id !== currentUserId))}
+      />
+    )}
+    </>
   );
 }

@@ -129,8 +129,8 @@ async def post_task_message_with_file(
                 conn, task, current_user["id"], body=(body.strip() or None), file_info=file_info,
             )
     except Exception:
-        # Запись в базу не удалась — файл на диске никому не нужен
-        storage.remove_file(file_info["file_path"])
+        # Запись в базу не удалась — файл и превью на диске никому не нужны
+        storage.remove_upload(file_info)
         raise
 
     await events.publish_events(task_id, outgoing)
@@ -142,6 +142,8 @@ async def post_task_message_with_file(
 async def download_task_message_file(
     task_id: int,
     message_id: int,
+    preview: bool = Query(False, description="Уменьшенная копия картинки для ленты чата"),
+    inline: bool = Query(False, description="Открыть картинку в браузере, а не скачать"),
     current_user=Depends(get_current_user),
     conn=Depends(get_connection),
 ):
@@ -150,7 +152,7 @@ async def download_task_message_file(
 
     row = await conn.fetchrow(
         """
-        SELECT file_path, file_name, file_mime
+        SELECT file_path, file_name, file_mime, file_thumb_path
         FROM task_messages
         WHERE id = $1 AND task_id = $2
         """,
@@ -162,6 +164,20 @@ async def download_task_message_file(
             detail="Файл не найден",
         )
 
+    # Превью есть только у файлов, которые Pillow признал настоящей картинкой.
+    # Только их и отдаём inline: произвольный файл, открытый в браузере с домена API,
+    # мог бы оказаться HTML со скриптом
+    is_image = row["file_thumb_path"] is not None
+    headers = {"X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=86400"}
+
+    if preview:
+        if not is_image:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Превью нет")
+        thumb = Path(row["file_thumb_path"])
+        if not thumb.exists():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Превью отсутствует на диске")
+        return FileResponse(thumb, media_type="image/jpeg", headers=headers)
+
     path = Path(row["file_path"])
     if not path.exists():
         raise HTTPException(
@@ -172,8 +188,43 @@ async def download_task_message_file(
     return FileResponse(
         path,
         filename=row["file_name"] or path.name,
-        media_type=row["file_mime"] or "application/octet-stream",
+        media_type=(row["file_mime"] if is_image else None) or "application/octet-stream",
+        content_disposition_type="inline" if (inline and is_image) else "attachment",
+        headers=headers,
     )
+
+
+@router.get("/{task_id}/files")
+async def list_task_files(
+    task_id: int,
+    current_user=Depends(get_current_user),
+    conn=Depends(get_connection),
+):
+    """Все вложения из чата задачи — для блока «Файлы» на экране задачи."""
+    task = await load_task(conn, task_id)
+    await ensure_task_access(conn, current_user, task, write=False)
+
+    rows = await conn.fetch(
+        """
+        SELECT
+            m.id AS message_id,
+            m.file_name,
+            m.file_size,
+            m.file_mime,
+            (m.file_thumb_path IS NOT NULL) AS has_preview,
+            m.author_user_id,
+            u.last_name  AS author_last_name,
+            u.first_name AS author_first_name,
+            m.created_at
+        FROM task_messages m
+        LEFT JOIN users u ON u.id = m.author_user_id
+        WHERE m.task_id = $1
+          AND m.file_path IS NOT NULL
+        ORDER BY m.id DESC
+        """,
+        task_id,
+    )
+    return [dict(r) for r in rows]
 
 
 @router.post("/{task_id}/messages/read")

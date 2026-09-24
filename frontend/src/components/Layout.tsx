@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { logoutUser } from "../api/auth";
 import { fetchProfile, type Profile } from "../api/data";
 import NotificationBell from "./NotificationBell";
+import { useTaskContext } from "../hooks/useTaskContext";
 
 type Props = { children: ReactNode };
 
@@ -50,6 +51,10 @@ export default function Layout({ children }: Props) {
   const isDocumentsActive = pathname === "/documents";
   const isDocumentTemplatesActive = pathname === "/document-templates";
   const isTasksActive = pathname.startsWith("/tasks");
+  const isOrgAdminActive = pathname === "/org-admin";
+  // пункт «Управление» — только тем, кто может управлять хоть одной организацией
+  const taskContext = useTaskContext();
+  const canManageOrg = taskContext?.organizations.some((o) => o.can_manage) ?? false;
 
   const isDataActive =
     pathname.startsWith("/organizations") ||
@@ -176,6 +181,21 @@ export default function Layout({ children }: Props) {
                 <span className="d-none d-xl-inline">Задачи</span>
               </Link>
             </li>
+
+            {canManageOrg && (
+              <li className="nav-item">
+                <Link
+                  to="/org-admin"
+                  title="Управление организацией"
+                  className={`nav-link px-2 py-2 rounded-pill ${
+                    isOrgAdminActive ? "layout-nav-active" : "layout-nav-default"
+                  }`}
+                >
+                  <i className="fa fa-users-gear me-xl-2" />
+                  <span className="d-none d-xl-inline">Управление</span>
+                </Link>
+              </li>
+            )}
 
             <li className="nav-item position-relative" ref={dataMenuRef}>
               <button

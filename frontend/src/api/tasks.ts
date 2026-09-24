@@ -6,7 +6,16 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
     credentials: "include",
     headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
   });
-  if (!res.ok) throw new Error(`${res.status}`);
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const body = await res.json();
+      detail = typeof body?.detail === "string" ? body.detail : "";
+    } catch {
+      // тело не JSON — обойдёмся кодом
+    }
+    throw new ApiError(res.status, detail);
+  }
   return res.json();
 }
 
@@ -23,6 +32,37 @@ export type TaskPerson = {
   last_name: string | null;
   first_name: string | null;
   middle_name?: string | null;
+};
+
+export type TaskCategory = {
+  id: number;
+  organization_id?: number;
+  name: string;
+  color: string;
+};
+
+/** Права пользователя в организации — считает бэкенд, фронт только читает. */
+export type OrgPermissions = {
+  org_role_code: string | null;
+  can_view_all: boolean;
+  can_complete: boolean;
+  can_delete_any: boolean;
+  can_manage: boolean;
+  can_write: boolean;
+};
+
+export type ContextOrganization = OrgPermissions & {
+  id: number;
+  name: string;
+  org_role_label: string | null;
+};
+
+export type TaskContext = {
+  user_id: number;
+  global_role: string | null;
+  is_global_admin: boolean;
+  is_readonly: boolean;
+  organizations: ContextOrganization[];
 };
 
 export type Task = {
@@ -42,6 +82,8 @@ export type Task = {
   created_at: string;
   updated_at: string;
   participants: TaskPerson[] | string;
+  categories: TaskCategory[] | string;
+  permissions?: OrgPermissions;
 };
 
 export type TaskCreate = {
@@ -51,6 +93,8 @@ export type TaskCreate = {
   description?: string;
   severity?: TaskSeverity;
   due_at?: string | null;
+  participant_user_ids?: number[];
+  category_ids?: number[];
 };
 
 export type OrgUserGroup = {
@@ -80,7 +124,34 @@ export type TaskMessage = {
   file_size: number | null;
   file_mime: string | null;
   has_file: boolean;
+  has_preview: boolean;
   created_at: string;
+};
+
+export type TaskFile = {
+  message_id: number;
+  file_name: string | null;
+  file_size: number | null;
+  file_mime: string | null;
+  has_preview: boolean;
+  author_user_id: number | null;
+  author_last_name: string | null;
+  author_first_name: string | null;
+  created_at: string;
+};
+
+export type UserProfile = {
+  id: number;
+  last_name: string | null;
+  first_name: string | null;
+  middle_name: string | null;
+  email: string;
+  phone: string | null;
+  org_role_code: string | null;
+  org_role_label: string | null;
+  position_title: string | null;
+  building_name: string | null;
+  organization: string;
 };
 
 export type MessagesPage = {
@@ -124,7 +195,33 @@ export function taskParticipants(task: Task): TaskPerson[] {
   return parseJson<TaskPerson[]>(task.participants, []);
 }
 
+export function taskCategories(task: Task): TaskCategory[] {
+  return parseJson<TaskCategory[]>(task.categories, []);
+}
+
+/** Текст ошибки из ответа бэкенда (поле detail), чтобы показать человеку причину отказа. */
+export class ApiError extends Error {
+  status: number;
+  detail: string;
+
+  // message — код ответа: старый код везде сверяет e.message === "401"
+  constructor(status: number, detail: string) {
+    super(String(status));
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+/** Причина отказа для человека: текст бэкенда, если он есть, иначе запасной. */
+export function errorText(error: unknown, fallback: string): string {
+  return error instanceof ApiError && error.detail ? error.detail : fallback;
+}
+
 // ── Задачи ────────────────────────────────────────────────────────────────────
+
+export const fetchTaskContext = () => apiFetch<TaskContext>("/tasks/context");
+
+export const fetchTask = (id: number) => apiFetch<Task>(`/tasks/${id}`);
 
 export const fetchMyTasks = () => apiFetch<Task[]>("/tasks/my");
 
@@ -148,6 +245,29 @@ export const setTaskParticipants = (id: number, userIds: number[]) =>
     method: "PUT",
     body: JSON.stringify({ user_ids: userIds }),
   });
+
+export const setTaskCategories = (id: number, categoryIds: number[]) =>
+  apiFetch<Task>(`/tasks/${id}/categories`, {
+    method: "PUT",
+    body: JSON.stringify({ category_ids: categoryIds }),
+  });
+
+export const fetchCategories = (organizationId: number) =>
+  apiFetch<TaskCategory[]>(`/tasks/categories?organization_id=${organizationId}`);
+
+export const createCategory = (organizationId: number, name: string) =>
+  apiFetch<TaskCategory>("/tasks/categories", {
+    method: "POST",
+    body: JSON.stringify({ organization_id: organizationId, name }),
+  });
+
+export const deleteCategory = (id: number) =>
+  apiFetch<{ ok: boolean }>(`/tasks/categories/${id}`, { method: "DELETE" });
+
+export const fetchUserProfile = (userId: number, organizationId: number) =>
+  apiFetch<UserProfile>(`/tasks/users/${userId}?organization_id=${organizationId}`);
+
+export const fetchTaskFiles = (taskId: number) => apiFetch<TaskFile[]>(`/tasks/${taskId}/files`);
 
 export const fetchTaskOrgUsers = (organizationId?: number) =>
   apiFetch<OrgUserGroup[]>(
@@ -177,12 +297,28 @@ export const postMessageWithFile = async (taskId: number, file: File, body: stri
     credentials: "include",
     body: fd,
   });
-  if (!res.ok) throw new Error(`${res.status}`);
+  if (!res.ok) {
+    let detail = "";
+    try {
+      detail = (await res.json())?.detail ?? "";
+    } catch {
+      // не JSON
+    }
+    throw new ApiError(res.status, typeof detail === "string" ? detail : "");
+  }
   return (await res.json()) as TaskMessage;
 };
 
 export const messageFileUrl = (taskId: number, messageId: number) =>
   `${API_URL}/tasks/${taskId}/messages/${messageId}/file`;
+
+/** Уменьшенная копия картинки — для ленты чата и списка файлов. */
+export const messagePreviewUrl = (taskId: number, messageId: number) =>
+  `${messageFileUrl(taskId, messageId)}?preview=1`;
+
+/** Картинка целиком, открывается в браузере, а не скачивается. */
+export const messageInlineUrl = (taskId: number, messageId: number) =>
+  `${messageFileUrl(taskId, messageId)}?inline=1`;
 
 export const markChatRead = (taskId: number) =>
   apiFetch<{ ok: boolean }>(`/tasks/${taskId}/messages/read`, { method: "POST" });
@@ -207,6 +343,22 @@ export const taskChatStreamUrl = (taskId: number) => `${API_URL}/tasks/${taskId}
 
 /** Личный поток уведомлений. */
 export const notificationsStreamUrl = () => `${API_URL}/tasks/notifications/stream`;
+
+// ── Web push ──────────────────────────────────────────────────────────────────
+
+export const fetchPushPublicKey = () => apiFetch<{ public_key: string }>("/push/public-key");
+
+export const savePushSubscription = (subscription: PushSubscriptionJSON) =>
+  apiFetch<{ ok: boolean }>("/push/subscribe", {
+    method: "POST",
+    body: JSON.stringify(subscription),
+  });
+
+export const removePushSubscription = (endpoint: string) =>
+  apiFetch<{ ok: boolean }>("/push/unsubscribe", {
+    method: "POST",
+    body: JSON.stringify({ endpoint }),
+  });
 
 // ── Подписи ───────────────────────────────────────────────────────────────────
 

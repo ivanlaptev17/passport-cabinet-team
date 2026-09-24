@@ -1,18 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchTaskOrgUsers, type OrgUserGroup } from "../api/tasks";
+import { errorText, fetchTaskOrgUsers, type OrgUserGroup } from "../api/tasks";
 
 type Props = {
   organizationId: number;
   selected: number[];
   onClose: () => void;
   onSave: (userIds: number[]) => Promise<void> | void;
+  /** Кого не показывать в списке. Их отметка при этом сохраняется как была:
+   *  автор, редактируя свою задачу, не должен добавлять или убирать сам себя */
+  hiddenIds?: number[];
 };
 
 function fullName(u: OrgUserGroup["users"][number]) {
   return [u.last_name, u.first_name, u.middle_name].filter(Boolean).join(" ") || u.email;
 }
 
-export default function ParticipantPicker({ organizationId, selected, onClose, onSave }: Props) {
+export default function ParticipantPicker({ organizationId, selected, onClose, onSave, hiddenIds = [] }: Props) {
   const [groups, setGroups] = useState<OrgUserGroup[]>([]);
   const [chosen, setChosen] = useState<number[]>(selected);
   const [search, setSearch] = useState("");
@@ -27,13 +30,17 @@ export default function ParticipantPicker({ organizationId, selected, onClose, o
       .finally(() => setLoading(false));
   }, [organizationId]);
 
+  const hiddenKey = hiddenIds.join(",");
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return groups;
+    const hidden = new Set(hiddenKey ? hiddenKey.split(",").map(Number) : []);
     return groups
-      .map((g) => ({ ...g, users: g.users.filter((u) => fullName(u).toLowerCase().includes(q)) }))
+      .map((g) => ({
+        ...g,
+        users: g.users.filter((u) => !hidden.has(u.id) && (!q || fullName(u).toLowerCase().includes(q))),
+      }))
       .filter((g) => g.users.length > 0);
-  }, [groups, search]);
+  }, [groups, search, hiddenKey]);
 
   const toggle = (id: number) =>
     setChosen((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -43,8 +50,8 @@ export default function ParticipantPicker({ organizationId, selected, onClose, o
     try {
       await onSave(chosen);
       onClose();
-    } catch {
-      setError("Не удалось сохранить участников");
+    } catch (e) {
+      setError(errorText(e, "Не удалось сохранить участников"));
     } finally {
       setSaving(false);
     }
@@ -120,7 +127,7 @@ export default function ParticipantPicker({ organizationId, selected, onClose, o
 
           <div className="modal-footer">
             <span className="me-auto text-muted" style={{ fontSize: 12 }}>
-              Выбрано: {chosen.length}
+              Выбрано: {chosen.filter((id) => !hiddenIds.includes(id)).length}
             </span>
             <button className="btn btn-sm btn-secondary" onClick={onClose}>
               Отмена
