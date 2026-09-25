@@ -465,7 +465,12 @@ function CreateTaskModal({
   return (
     <>
     <div className="modal show d-block" style={{ background: "rgba(0,0,0,0.45)" }} onClick={onClose}>
-      <div className="modal-dialog modal-dialog-centered modal-dialog-scrollable" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal-dialog modal-dialog-centered modal-dialog-scrollable"
+        // стандартные 500px тесны для формы; на телефоне окно и так во всю ширину
+        style={{ maxWidth: 680 }}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-content rounded-4 border-0">
           <div className="modal-header" style={{ background: "#37474f", color: "white" }}>
             <h6 className="modal-title mb-0 fw-semibold">
@@ -498,31 +503,36 @@ function CreateTaskModal({
               </>
             )}
 
-            {orgBuildings.length > 0 && (
-              <>
-                <label className="form-label small fw-semibold">Здание</label>
-                <select
-                  className="form-select mb-3"
-                  value={buildingId}
-                  onChange={(e) => setBuildingId(e.target.value ? Number(e.target.value) : "")}
-                >
-                  <option value="">Не указано</option>
-                  {orgBuildings.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name ?? `Здание №${b.id}`}
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
+            {/* На широком экране здание и дедлайн — в одну строку, на телефоне друг под другом */}
+            <div className="row g-3 mb-3">
+              {orgBuildings.length > 0 && (
+                <div className="col-12 col-md-6">
+                  <label className="form-label small fw-semibold">Здание</label>
+                  <select
+                    className="form-select"
+                    value={buildingId}
+                    onChange={(e) => setBuildingId(e.target.value ? Number(e.target.value) : "")}
+                  >
+                    <option value="">Не указано</option>
+                    {orgBuildings.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name ?? `Здание №${b.id}`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
-            <label className="form-label small fw-semibold">Дедлайн</label>
-            <div className="row g-2 mb-3">
-              <div className="col-7">
-                <DateField value={dueDate} onChange={setDueDate} />
-              </div>
-              <div className="col-5">
-                <input type="time" className="form-control" value={dueTime} onChange={(e) => setDueTime(e.target.value)} />
+              <div className={orgBuildings.length > 0 ? "col-12 col-md-6" : "col-12"}>
+                <label className="form-label small fw-semibold">Дедлайн</label>
+                <div className="row g-2">
+                  <div className="col-7">
+                    <DateField value={dueDate} onChange={setDueDate} />
+                  </div>
+                  <div className="col-5">
+                    <input type="time" className="form-control" value={dueTime} onChange={(e) => setDueTime(e.target.value)} />
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -547,18 +557,14 @@ function CreateTaskModal({
             </div>
 
             <div className="mb-3">
-              <div className="d-flex justify-content-between align-items-center mb-2">
+              <div className={`d-flex justify-content-between align-items-center ${participantIds.length > 0 ? "mb-2" : ""}`}>
                 <label className="form-label small fw-semibold mb-0">Участники</label>
                 <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setPickerOpen(true)}>
                   <i className="fa fa-user-plus me-1" />
                   Добавить участника
                 </button>
               </div>
-              {participantIds.length === 0 ? (
-                <div className="text-muted" style={{ fontSize: 13 }}>
-                  Можно назначить сразу или позже, на экране задачи
-                </div>
-              ) : (
+              {participantIds.length > 0 && (
                 <div className="d-flex flex-wrap gap-2">
                   {participantIds.map((id) => (
                     <span key={id} className="badge rounded-pill text-dark border d-inline-flex align-items-center gap-1" style={{ background: "#eceff1", fontWeight: 500 }}>
