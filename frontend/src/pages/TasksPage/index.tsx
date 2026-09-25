@@ -122,6 +122,7 @@ export default function TasksPage() {
   const [showDone, setShowDone] = useState(false);
   const [statusFilter, setStatusFilter] = useState<TaskStatus | "">("");
   const [severityFilter, setSeverityFilter] = useState<TaskSeverity | "">("");
+  const [categoryFilter, setCategoryFilter] = useState<number | "">("");
   const [buildingFilter, setBuildingFilter] = useState<number | "">("");
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
@@ -174,6 +175,7 @@ export default function TasksPage() {
   const switchScope = (next: Scope) => {
     setScope(next);
     setBuildingFilter("");
+    setCategoryFilter("");
     // в «Задачах ОО» пункта «все организации» нет — подставляем доступную
     if (next === "org" && (orgId === "" || !supervised.some((o) => o.id === orgId))) {
       setOrgId(supervised[0]?.id ?? "");
@@ -190,11 +192,25 @@ export default function TasksPage() {
       if (!showDone && t.status === "DONE") return false;
       if (statusFilter && t.status !== statusFilter) return false;
       if (severityFilter && t.severity !== severityFilter) return false;
+      if (categoryFilter && !taskCategories(t).some((c) => c.id === categoryFilter)) return false;
       if (buildingFilter && t.building_id !== buildingFilter) return false;
       if (q && !t.title.toLowerCase().includes(q) && !(t.description ?? "").toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [tasks, selectedOrg, showDone, statusFilter, severityFilter, buildingFilter, search]);
+  }, [tasks, selectedOrg, showDone, statusFilter, severityFilter, categoryFilter, buildingFilter, search]);
+
+  // Категории для фильтра — те, что реально есть у задач в журнале: без пустых вариантов
+  // и без отдельного запроса. Одинаковые названия из разных школ различаем по организации
+  const categoryOptions = useMemo(() => {
+    const byId = new Map<number, { id: number; name: string; org: string }>();
+    for (const t of tasks) {
+      if (selectedOrg !== undefined && t.organization_id !== selectedOrg) continue;
+      for (const c of taskCategories(t)) byId.set(c.id, { id: c.id, name: c.name, org: t.organization });
+    }
+    const options = [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, "ru"));
+    const repeated = new Set(options.filter((o, i) => options.findIndex((x) => x.name === o.name) !== i).map((o) => o.name));
+    return options.map((o) => ({ id: o.id, label: repeated.has(o.name) ? `${o.name} (${o.org})` : o.name }));
+  }, [tasks, selectedOrg]);
 
   const orgBuildings = useMemo(
     () => (selectedOrg === undefined ? [] : buildings.filter((b) => b.organization_id === selectedOrg)),
@@ -257,6 +273,7 @@ export default function TasksPage() {
                   onChange={(e) => {
                     setOrgId(e.target.value ? Number(e.target.value) : "");
                     setBuildingFilter("");
+                    setCategoryFilter("");
                   }}
                 >
                   {activeScope !== "org" && <option value="">Все организации</option>}
@@ -295,6 +312,22 @@ export default function TasksPage() {
                   </option>
                 ))}
               </select>
+
+              {categoryOptions.length > 0 && (
+                <select
+                  className="form-select form-select-sm"
+                  style={{ maxWidth: 200 }}
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value ? Number(e.target.value) : "")}
+                >
+                  <option value="">Все категории</option>
+                  {categoryOptions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              )}
 
               {orgBuildings.length > 0 && (
                 <select
