@@ -427,7 +427,7 @@ function CreateTaskModal({
   }, [organizationId]);
 
   const changeOrganization = (id: number) => {
-    // здания, теги и люди у каждой организации свои
+    // здания, категории и люди у каждой организации свои
     setOrganizationId(id);
     setBuildingId("");
     setCategoryIds([]);
@@ -541,43 +541,45 @@ function CreateTaskModal({
               ))}
             </div>
 
-            <label className="form-label small fw-semibold">Теги</label>
+            <label className="form-label small fw-semibold">Категории</label>
             <div className="mb-3">
               <TagPicker key={organizationId} organizationId={organizationId} selected={categoryIds} onChange={setCategoryIds} />
             </div>
 
-            <label className="form-label small fw-semibold">Описание задачи</label>
-            <textarea className="form-control mb-3" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
-
-            <div className="d-flex justify-content-between align-items-center mb-2">
-              <label className="form-label small fw-semibold mb-0">Участники</label>
-              <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setPickerOpen(true)}>
-                <i className="fa fa-user-plus me-1" />
-                Добавить участника
-              </button>
+            <div className="mb-3">
+              <div className="d-flex justify-content-between align-items-center mb-2">
+                <label className="form-label small fw-semibold mb-0">Участники</label>
+                <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setPickerOpen(true)}>
+                  <i className="fa fa-user-plus me-1" />
+                  Добавить участника
+                </button>
+              </div>
+              {participantIds.length === 0 ? (
+                <div className="text-muted" style={{ fontSize: 13 }}>
+                  Можно назначить сразу или позже, на экране задачи
+                </div>
+              ) : (
+                <div className="d-flex flex-wrap gap-2">
+                  {participantIds.map((id) => (
+                    <span key={id} className="badge rounded-pill text-dark border d-inline-flex align-items-center gap-1" style={{ background: "#eceff1", fontWeight: 500 }}>
+                      {participantNames[id] ?? `#${id}`}
+                      <button
+                        type="button"
+                        className="btn btn-link p-0 text-muted"
+                        style={{ fontSize: 11, lineHeight: 1 }}
+                        title="Убрать"
+                        onClick={() => setParticipantIds((prev) => prev.filter((x) => x !== id))}
+                      >
+                        <i className="fa fa-xmark" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
-            {participantIds.length === 0 ? (
-              <div className="text-muted" style={{ fontSize: 13 }}>
-                Можно назначить сразу или позже, на экране задачи
-              </div>
-            ) : (
-              <div className="d-flex flex-wrap gap-2">
-                {participantIds.map((id) => (
-                  <span key={id} className="badge rounded-pill text-dark border d-inline-flex align-items-center gap-1" style={{ background: "#eceff1", fontWeight: 500 }}>
-                    {participantNames[id] ?? `#${id}`}
-                    <button
-                      type="button"
-                      className="btn btn-link p-0 text-muted"
-                      style={{ fontSize: 11, lineHeight: 1 }}
-                      title="Убрать"
-                      onClick={() => setParticipantIds((prev) => prev.filter((x) => x !== id))}
-                    >
-                      <i className="fa fa-xmark" />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
+
+            <label className="form-label small fw-semibold">Описание задачи</label>
+            <textarea className="form-control" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
           </div>
 
           <div className="modal-footer">

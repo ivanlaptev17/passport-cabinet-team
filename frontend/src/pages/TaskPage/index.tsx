@@ -237,7 +237,7 @@ export default function TaskPage() {
             <div className="card border-0 shadow-sm rounded-4 mb-3">
               <div className="card-body">
                 <div className="d-flex justify-content-between align-items-center mb-2">
-                  <span className="text-muted" style={{ fontSize: 13 }}>Теги</span>
+                  <span className="text-muted" style={{ fontSize: 13 }}>Категории</span>
                   {canWork && !editingTags && (
                     <button
                       className="btn btn-sm btn-outline-secondary"
@@ -265,7 +265,7 @@ export default function TaskPage() {
                         disabled={busy}
                         onClick={() =>
                           // при ошибке остаёмся в редактировании, чтобы выбор не пропал
-                          void run(() => setTaskCategories(task.id, draftTags), "Не удалось сохранить теги").then(
+                          void run(() => setTaskCategories(task.id, draftTags), "Не удалось сохранить категории").then(
                             (ok) => ok && setEditingTags(false),
                           )
                         }
@@ -275,7 +275,7 @@ export default function TaskPage() {
                     </div>
                   </>
                 ) : tags.length === 0 ? (
-                  <div className="text-muted" style={{ fontSize: 14 }}>Тегов нет</div>
+                  <div className="text-muted" style={{ fontSize: 14 }}>Категорий нет</div>
                 ) : (
                   <div className="d-flex flex-wrap gap-2">
                     <TagChips tags={tags} />

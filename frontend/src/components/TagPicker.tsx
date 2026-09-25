@@ -8,7 +8,7 @@ type Props = {
   disabled?: boolean;
 };
 
-/** Теги организации: выбрать из имеющихся или завести новый прямо здесь. */
+/** Категории организации: выбрать из имеющихся или завести новую прямо здесь. */
 export default function TagPicker({ organizationId, selected, onChange, disabled = false }: Props) {
   const [tags, setTags] = useState<TaskCategory[]>([]);
   const [draft, setDraft] = useState("");
@@ -19,7 +19,7 @@ export default function TagPicker({ organizationId, selected, onChange, disabled
     let alive = true;
     fetchCategories(organizationId)
       .then((list) => alive && setTags(list))
-      .catch(() => alive && setError("Не удалось загрузить теги"));
+      .catch(() => alive && setError("Не удалось загрузить категории"));
     return () => {
       alive = false;
     };
@@ -34,13 +34,13 @@ export default function TagPicker({ organizationId, selected, onChange, disabled
     setBusy(true);
     setError("");
     try {
-      // такой тег уже есть — бэкенд вернёт существующий, а не создаст дубль
+      // такая категория уже есть — бэкенд вернёт существующую, а не создаст дубль
       const tag = await createCategory(organizationId, name);
       setTags((prev) => (prev.some((t) => t.id === tag.id) ? prev : [...prev, tag].sort((a, b) => a.name.localeCompare(b.name, "ru"))));
       if (!selected.includes(tag.id)) onChange([...selected, tag.id]);
       setDraft("");
     } catch (e) {
-      setError(errorText(e, "Не удалось создать тег"));
+      setError(errorText(e, "Не удалось создать категорию"));
     } finally {
       setBusy(false);
     }
@@ -49,7 +49,7 @@ export default function TagPicker({ organizationId, selected, onChange, disabled
   return (
     <div>
       <div className="d-flex flex-wrap gap-2 mb-2">
-        {tags.length === 0 && <span className="text-muted" style={{ fontSize: 13 }}>Тегов пока нет — создайте первый</span>}
+        {tags.length === 0 && <span className="text-muted" style={{ fontSize: 13 }}>Категорий пока нет — создайте первую</span>}
         {tags.map((tag) => {
           const active = selected.includes(tag.id);
           return (
@@ -78,7 +78,7 @@ export default function TagPicker({ organizationId, selected, onChange, disabled
         <div className="input-group input-group-sm" style={{ maxWidth: 320 }}>
           <input
             className="form-control"
-            placeholder="Новый тег"
+            placeholder="Новая категория"
             value={draft}
             maxLength={40}
             onChange={(e) => setDraft(e.target.value)}
@@ -100,7 +100,7 @@ export default function TagPicker({ organizationId, selected, onChange, disabled
   );
 }
 
-/** Чипы тегов только для чтения — карточка задачи, экран задачи. */
+/** Чипы категорий только для чтения — карточка задачи, экран задачи. */
 export function TagChips({ tags }: { tags: TaskCategory[] }) {
   if (tags.length === 0) return null;
   return (

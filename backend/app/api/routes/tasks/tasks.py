@@ -64,7 +64,7 @@ def _naive(dt: datetime | None) -> datetime | None:
 
 _TASK_STATUS_ORDER = "CASE t.status WHEN 'NEW' THEN 0 WHEN 'IN_PROGRESS' THEN 1 WHEN 'PENDING_REVIEW' THEN 2 WHEN 'DONE' THEN 3 ELSE 4 END"
 
-# Участники и теги собираются подзапросами, а не JOIN-ами: два JOIN-а на
+# Участники и категории собираются подзапросами, а не JOIN-ами: два JOIN-а на
 # «многие» дали бы декартово произведение и задвоили бы элементы в массивах
 _TASK_SELECT = """
     SELECT
@@ -108,9 +108,17 @@ _TASK_SELECT = """
 """
 
 
-async def _fetch_task(conn, task_id: int) -> dict:
+async def _fetch_task(conn, task_id: int, current_user: dict) -> dict:
+    """Задача вместе с правами пользователя на неё.
+
+    Права кладём в каждый ответ, а не только в GET: фронт заменяет задачу ответом
+    на смену статуса или участников, и без прав кнопки «Завершена» и «Удалить»
+    гасли до перезагрузки страницы.
+    """
     row = await conn.fetchrow(f"{_TASK_SELECT} WHERE t.id = $1", task_id)
-    return dict(row)
+    task = dict(row)
+    task["permissions"] = await org_permissions(conn, current_user, task["organization_id"])
+    return task
 
 
 async def _ensure_members(conn, organization_id: int, user_ids: list[int]) -> None:
@@ -136,7 +144,7 @@ async def _ensure_members(conn, organization_id: int, user_ids: list[int]) -> No
 
 
 async def _ensure_categories(conn, organization_id: int, category_ids: list[int]) -> None:
-    """Теги задачи берутся только из тегов её организации."""
+    """Категории задачи берутся только из категорий её организации."""
     if not category_ids:
         return
     rows = await conn.fetch(
@@ -147,7 +155,7 @@ async def _ensure_categories(conn, organization_id: int, category_ids: list[int]
     if any(cid not in found for cid in category_ids):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Тег не принадлежит организации задачи",
+            detail="Категория не принадлежит организации задачи",
         )
 
 
@@ -320,7 +328,7 @@ async def create_task(
             )
 
     await events.publish_events(task_id, outgoing)
-    return await _fetch_task(conn, task_id)
+    return await _fetch_task(conn, task_id, current_user)
 
 
 @router.get("/{task_id:int}")
@@ -331,9 +339,7 @@ async def get_task(
 ):
     task = await load_task(conn, task_id)
     await ensure_task_access(conn, current_user, task, write=False)
-    result = await _fetch_task(conn, task_id)
-    result["permissions"] = await org_permissions(conn, current_user, task["organization_id"])
-    return result
+    return await _fetch_task(conn, task_id, current_user)
 
 
 @router.delete("/{task_id:int}")
@@ -355,7 +361,7 @@ async def delete_task(
             detail="Удалить задачу может только её автор или Ответственный ОО",
         )
 
-    # Участники, сообщения, теги и уведомления удалятся каскадом по внешнему ключу
+    # Участники, сообщения, категории и уведомления удалятся каскадом по внешнему ключу
     await conn.execute("DELETE FROM tasks WHERE id = $1", task_id)
     # А вот файлы с диска каскад не уносит
     storage.remove_task_files(existing["organization_id"], task_id)
@@ -417,7 +423,7 @@ async def set_task_participants(
                 )
 
     await events.publish_events(task_id, outgoing)
-    return await _fetch_task(conn, task_id)
+    return await _fetch_task(conn, task_id, current_user)
 
 
 @router.put("/{task_id:int}/status")
@@ -447,7 +453,7 @@ async def set_task_status(
             task_id,
         )
         if previous_status == payload.status:
-            return await _fetch_task(conn, task_id)
+            return await _fetch_task(conn, task_id, current_user)
 
         # «Завершена» — контрольная точка: ставит её и снимает только тот, кто
         # проверяет работу. Иначе исполнитель мог бы вернуть закрытую задачу в работу
@@ -485,7 +491,7 @@ async def set_task_status(
             )
 
     await events.publish_events(task_id, outgoing)
-    return await _fetch_task(conn, task_id)
+    return await _fetch_task(conn, task_id, current_user)
 
 
 @router.put("/{task_id:int}/categories")
@@ -510,7 +516,7 @@ async def set_task_categories(
             )
         await conn.execute("UPDATE tasks SET updated_at = NOW() WHERE id = $1", task_id)
 
-    return await _fetch_task(conn, task_id)
+    return await _fetch_task(conn, task_id, current_user)
 
 
 @router.get("/my")
