@@ -34,7 +34,7 @@ async def export_employees(
         SELECT
             e.last_name, e.first_name, e.middle_name,
             p.name AS position, c.name AS category,
-            e.phone, o.name AS organization
+            e.contacts, o.name AS organization
         FROM employees e
         JOIN organizations o ON o.id = e.organization_id
         LEFT JOIN employee_positions ep ON ep.employee_id = e.id
@@ -54,7 +54,7 @@ async def export_employees(
             r["middle_name"] or "",
             r["position"] or "",
             r["category"] or "",
-            r["phone"] or "",
+            r["contacts"] or "",
             r["organization"] or "",
         ]
         for r in rows
@@ -63,7 +63,7 @@ async def export_employees(
     buf = await (
         XlsxBuilder("Сотрудники")
         .add_sheet(
-            headers=["Фамилия", "Имя", "Отчество", "Должность", "Категория", "Телефон", "Организация"],
+            headers=["Фамилия", "Имя", "Отчество", "Должность", "Категория", "Контакты", "Организация"],
             rows=data,
         )
         .build()

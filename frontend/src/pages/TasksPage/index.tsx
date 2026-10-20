@@ -5,6 +5,7 @@ import DateField from "../../components/DateField";
 import ParticipantPicker from "../../components/ParticipantPicker";
 import TagPicker, { TagChips } from "../../components/TagPicker";
 import { useTaskContext } from "../../hooks/useTaskContext";
+import { getActiveOrg } from "../../utils/activeOrg";
 import {
   createTask,
   errorText,
@@ -110,7 +111,8 @@ export default function TasksPage() {
   const ctx = useTaskContext();
 
   const [scope, setScope] = useState<Scope | null>(null);
-  const [orgId, setOrgId] = useState<number | "">("");
+  // по умолчанию — организация, выбранная в шапке
+  const [orgId, setOrgId] = useState<number | "">(() => getActiveOrg()?.id ?? "");
   const [myTasks, setMyTasks] = useState<Task[]>([]);
   const [orgTasks, setOrgTasks] = useState<Task[]>([]);
   const [buildings, setBuildings] = useState<Building[]>([]);

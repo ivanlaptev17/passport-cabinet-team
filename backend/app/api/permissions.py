@@ -2,6 +2,8 @@ from typing import Iterable
 
 from fastapi import HTTPException, status
 
+from app.api.active_org import active_org_id
+
 
 GLOBAL_FULL_ACCESS_ROLES = {"ADMIN"}
 GLOBAL_READONLY_ROLES = {"MINOBR"}
@@ -69,6 +71,31 @@ async def get_user_memberships(user_id: int, conn) -> list[dict]:
 async def get_user_org_ids(user_id: int, conn) -> list[int]:
     memberships = await get_user_memberships(user_id, conn)
     return [m["organization_id"] for m in memberships]
+
+
+def has_global_view_access(current_user: dict) -> bool:
+    """Видит все организации: администратор системы и министерство."""
+    return has_global_full_access(current_user) or has_global_readonly_access(current_user)
+
+
+async def scoped_org_ids(current_user: dict, conn) -> list[int] | None:
+    """Организации, данные которых показываем в разделах школы. None — без ограничения.
+
+    Администратор системы и министерство видят все организации, а выбрав одну —
+    только её. Остальные видят только свои организации, а из них — выбранную.
+    Чужая выбранная организация игнорируется: заголовок прав не даёт.
+
+    Раньше ограничение действовало только для ролей DIRECTOR и SCHOOL_STAFF, и любой
+    другой пользователь — зарегистрировавшийся сам, ОМСУ — видел данные всех школ.
+    """
+    active = active_org_id.get()
+    if has_global_view_access(current_user):
+        return [active] if active else None
+
+    member_org_ids = await get_user_org_ids(current_user["id"], conn)
+    if active and active in member_org_ids:
+        return [active]
+    return member_org_ids
 
 
 async def get_membership_for_org(user_id: int, organization_id: int, conn) -> dict | None:

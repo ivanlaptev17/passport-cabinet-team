@@ -212,21 +212,34 @@ async def get_task_context(
     Глобальный администратор и Минобр членства не имеют, но видят все организации.
     """
     is_global = has_global_full_access(current_user) or has_global_readonly_access(current_user)
+    # регионы — чтобы рядом с организацией показывать, к какому муниципалитету она относится
+    org_select = """
+        SELECT o.id, o.name,
+               COALESCE(ARRAY_AGG(m.name ORDER BY m.name) FILTER (WHERE m.id IS NOT NULL), '{}') AS municipalities
+        FROM organizations o
+        LEFT JOIN organization_municipalities om ON om.organization_id = o.id
+        LEFT JOIN municipalities m ON m.id = om.municipality_id
+    """
     if is_global:
-        rows = await conn.fetch("SELECT id, name FROM organizations ORDER BY id")
+        rows = await conn.fetch(f"{org_select} GROUP BY o.id ORDER BY o.id")
     else:
         org_ids = await get_user_org_ids(current_user["id"], conn)
         rows = await conn.fetch(
-            "SELECT id, name FROM organizations WHERE id = ANY($1::bigint[]) ORDER BY id",
+            f"{org_select} WHERE o.id = ANY($1::bigint[]) GROUP BY o.id ORDER BY o.id",
             org_ids,
         )
 
+    # У министерства и администратора системы членств нет — права во всех организациях
+    # одинаковые, считаем их один раз, а не запросом на каждую из сотен школ
+    global_perms = await org_permissions(conn, current_user, rows[0]["id"]) if is_global and rows else None
+
     organizations = []
     for row in rows:
-        perms = await org_permissions(conn, current_user, row["id"])
+        perms = global_perms or await org_permissions(conn, current_user, row["id"])
         organizations.append({
             "id": row["id"],
             "name": row["name"],
+            "municipalities": list(row["municipalities"]),
             **perms,
             "org_role_label": ORG_ROLE_LABELS.get(perms["org_role_code"] or ""),
         })

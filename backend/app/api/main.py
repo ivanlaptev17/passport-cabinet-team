@@ -5,7 +5,10 @@ from app.api.routes.data import documents
 from app.api.routes.data import document_templates
 from app.api.routes.data import xlsx_export
 from app.api import push
+from app.api.routes import omsu
+from app.api.routes.data import staff_calendar
 from app.api.routes.org import admin as org_admin
+from app.api.routes.org import directory as org_directory
 from app.api.routes.tasks import categories as task_categories
 from app.api.routes.tasks import chat as task_chat
 from app.api.routes.tasks import notifications as task_notifications
@@ -18,6 +21,7 @@ api_router.include_router(data.router)
 api_router.include_router(documents.router)
 api_router.include_router(document_templates.router)
 api_router.include_router(xlsx_export.router)
+api_router.include_router(staff_calendar.router)
 
 # Порядок важен: /tasks/notifications/stream должен матчиться раньше,
 # чем /tasks/{task_id}/stream, иначе путь уедет в чат задачи
@@ -28,3 +32,5 @@ api_router.include_router(tasks.router)
 
 api_router.include_router(push.router)
 api_router.include_router(org_admin.router)
+api_router.include_router(org_directory.router)
+api_router.include_router(omsu.router)

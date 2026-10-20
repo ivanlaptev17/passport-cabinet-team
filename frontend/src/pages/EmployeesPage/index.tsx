@@ -23,6 +23,7 @@ export default function EmployeesPage() {
   const [editing, setEditing] = useState<Employee | null>(null);
   const [formFio, setFormFio] = useState("");
   const [formPosId, setFormPosId] = useState<number | "">("");
+  const [formContacts, setFormContacts] = useState("");
   const [saving, setSaving] = useState(false);
 
   const navigate = useNavigate();
@@ -47,7 +48,8 @@ export default function EmployeesPage() {
       (e.last_name ?? "").toLowerCase().includes(q) ||
       (e.first_name ?? "").toLowerCase().includes(q) ||
       (e.middle_name ?? "").toLowerCase().includes(q) ||
-      (e.position ?? "").toLowerCase().includes(q);
+      (e.position ?? "").toLowerCase().includes(q) ||
+      (e.contacts ?? "").toLowerCase().includes(q);
     return matchTab && matchSearch;
   });
 
@@ -55,9 +57,10 @@ export default function EmployeesPage() {
     setEditing(emp);
     setFormFio(emp.fio ?? "");
     setFormPosId(emp.position_id ?? "");
+    setFormContacts(emp.contacts ?? "");
   };
 
-  const closeEdit = () => { setEditing(null); setFormFio(""); setFormPosId(""); };
+  const closeEdit = () => { setEditing(null); setFormFio(""); setFormPosId(""); setFormContacts(""); };
 
   const saveEdit = async () => {
     if (!editing) return;
@@ -66,6 +69,7 @@ export default function EmployeesPage() {
       const updated = await updateEmployee(editing.id, {
         fio: formFio || undefined,
         position_id: formPosId !== "" ? Number(formPosId) : undefined,
+        contacts: formContacts,
       });
       setEmployees((prev) => prev.map((e) => (e.id === updated.id ? { ...e, ...updated } : e)));
       closeEdit();
@@ -133,26 +137,24 @@ export default function EmployeesPage() {
               <table className="table table-bordered mb-0">
                 <thead style={{ background: "#37474f", color: "white" }}>
                   <tr>
-                    <th>ID школы</th>
                     <th>Фамилия</th>
                     <th>Имя</th>
                     <th>Отчество</th>
                     <th>Должность</th>
-                    <th>Телефон</th>
+                    <th>Контакты</th>
                     {canEdit && <th style={{ width: 60 }} className="text-center"><i className="fa fa-cog" /></th>}
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.length === 0 ? (
-                    <tr><td colSpan={canEdit ? 7 : 6} className="text-center text-muted py-4">Данные отсутствуют</td></tr>
+                    <tr><td colSpan={canEdit ? 6 : 5} className="text-center text-muted py-4">Данные отсутствуют</td></tr>
                   ) : filtered.map((emp) => (
                     <tr key={emp.id}>
-                      <td className="text-muted small">{emp.organization_id}</td>
                       <td className="fw-semibold">{emp.last_name ?? "—"}</td>
                       <td>{emp.first_name ?? "—"}</td>
                       <td>{emp.middle_name ?? "—"}</td>
                       <td>{emp.position ?? "—"}</td>
-                      <td>{emp.phone ?? "—"}</td>
+                      <td style={{ whiteSpace: "pre-wrap", fontSize: 13 }}>{emp.contacts ?? "—"}</td>
                       {canEdit && (
                         <td className="text-center">
                           <button
@@ -196,6 +198,12 @@ export default function EmployeesPage() {
                       <option key={p.id} value={p.id}>{p.name} ({p.category ?? "—"})</option>
                     ))}
                   </select>
+                </div>
+                <div className="mb-3">
+                  <label className="form-label small fw-semibold">Контакты</label>
+                  <textarea className="form-control" rows={3} value={formContacts}
+                    onChange={(e) => setFormContacts(e.target.value)}
+                    placeholder={"Телефоны, почта, мессенджеры — в свободной форме"} />
                 </div>
               </div>
               <div className="modal-footer">

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { disablePush, enablePush, getPushState, syncPushSubscription, type PushState } from "../utils/push";
 import { useEventSource } from "../hooks/useEventSource";
+import { withOrgParam } from "../utils/activeOrg";
 import {
   fetchNotifications,
   markNotificationRead,
@@ -118,7 +119,8 @@ export default function NotificationBell() {
     },
   });
 
-  useEventSource(`${API_URL}/data/notifications/stream`, {
+  // выбранная организация — параметром: EventSource не умеет слать заголовки
+  useEventSource(withOrgParam(`${API_URL}/data/notifications/stream`), {
     onMessage: (data) => {
       try { setData(JSON.parse(data) as Notifications); }
       catch { /* ignore */ }

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import Layout from "../../components/Layout";
+import OrgPicker from "../../components/OrgPicker";
+import { useOrgScope } from "../../hooks/useOrgScope";
 import {
   fetchFinanceSummary,
   fetchUpcomingEvents,
@@ -443,27 +445,93 @@ function CalendarWidget({ events, onOpen }: { events: CalendarEvent[] | null; on
   );
 }
 
+/** Выбор организации — для министерства вместо быстрых действий. */
+function OrgSelectBlock({ name, regions, onPick }: { name: string | null; regions: string[]; onPick: () => void }) {
+  return (
+    <div className="card border-0 shadow-sm rounded-4" style={{ background: "linear-gradient(135deg, #37474f, #546e7a)" }}>
+      <div className="card-body p-4 d-flex align-items-center justify-content-between gap-3 flex-wrap">
+        <div style={{ minWidth: 0 }}>
+          <div className="fw-bold text-white mb-1" style={{ fontSize: 15 }}>
+            <i className="fa fa-school me-2" />
+            Выбор организации
+          </div>
+          {name ? (
+            <div className="text-white" style={{ fontSize: 14 }}>
+              <span className="fw-semibold">{name}</span>
+              {regions.length > 0 && <span style={{ opacity: 0.72 }}> · {regions.join(", ")}</span>}
+            </div>
+          ) : (
+            <div className="text-white" style={{ fontSize: 13, opacity: 0.8 }}>
+              Выберите регион и школу — ниже откроются её данные
+            </div>
+          )}
+        </div>
+        <button
+          className="btn px-4 py-2 rounded-pill fw-semibold quick-action-btn"
+          style={{ background: "rgba(255,255,255,0.18)", color: "#fff", border: "1px solid rgba(255,255,255,0.35)" }}
+          onClick={onPick}
+        >
+          <i className={`fa ${name ? "fa-arrows-rotate" : "fa-magnifying-glass"} me-2`} />
+          {name ? "Сменить организацию" : "Выбрать организацию"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const { isGlobal, isOmsu, needsOrg, active, canStaffCalendar } = useOrgScope();
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [summary, setSummary] = useState<FinanceSummary | null>(null);
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [upcomingEvents, setUpcomingEvents] = useState<CalendarEvent[] | null>(null);
 
   useEffect(() => {
+    // без выбранной организации данные не грузим: дашборд всё равно неактивен
+    if (needsOrg || isOmsu) return;
     fetchFinanceSummary().then(setSummary).catch(() => null);
     fetchMyTasks()
       .then((list) => setTasks(list.filter((t) => t.status !== "DONE").slice(0, 5)))
       .catch(() => setTasks([]));
     fetchUpcomingEvents(3).then(setUpcomingEvents).catch(() => setUpcomingEvents([]));
-  }, []);
+  }, [needsOrg, isOmsu]);
+
+  if (isOmsu) return <Navigate to="/omsu" replace />;
 
   return (
     <Layout>
+      {isGlobal && (
+        <div className="row g-0 mb-4">
+          <SectionHeader title="Министерство" subtitle="Сведения по муниципалитетам Московской области" />
+          <div className="col-12">
+            <div className="row">
+              <DashCard
+                icon="fa-landmark"
+                color="primary"
+                title="ОМСУ"
+                subtitle="Перечень представителей ОМСУ"
+                onClick={() => navigate("/omsu")}
+              />
+            </div>
+          </div>
+          <div className="col-12">
+            <OrgSelectBlock
+              name={active?.name ?? null}
+              regions={active?.municipalities ?? []}
+              onPick={() => setPickerOpen(true)}
+            />
+          </div>
+        </div>
+      )}
+
+      <div className={needsOrg ? "dash-disabled" : ""} aria-disabled={needsOrg}>
       <div className="row g-4">
         <div className="col-xl-9 col-lg-8">
           <div className="row g-0">
 
-            {/* ── Быстрые действия ── */}
+            {/* ── Быстрые действия ── министерству не нужны: оно не создаёт приказы и встречи */}
+            {!isGlobal && (
             <div className="col-12 mb-3">
               <div className="card border-0 shadow-sm rounded-4" style={{ background: "linear-gradient(135deg, #37474f, #546e7a)" }}>
                 <div className="card-body p-4">
@@ -498,6 +566,7 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
+            )}
 
             <SectionHeader
               title="Организация и МТБ"
@@ -563,6 +632,15 @@ export default function DashboardPage() {
                   subtitle="Младший обслуживающий"
                   onClick={() => navigate("/employees?cat=TECH")}
                 />
+                {canStaffCalendar && (
+                  <DashCard
+                    icon="fa-umbrella-beach"
+                    color="danger"
+                    title="Отпуска и дни рождения"
+                    subtitle="Отпуска, замы, даты рождения"
+                    onClick={() => navigate("/staff-calendar")}
+                  />
+                )}
               </div>
             </div>
 
@@ -639,12 +717,15 @@ export default function DashboardPage() {
 
         <div className="col-xl-3 col-lg-4">
           <div style={{ position: "sticky", top: 24 }}>
-            <FinancePulse data={summary} />
-            <CalendarWidget events={upcomingEvents} onOpen={() => navigate("/calendar")} />
-            <TasksWidget items={tasks} onOpen={() => navigate("/tasks")} />
+            <FinancePulse data={needsOrg ? { budget: 0, expenses: 0, remainder: 0 } : summary} />
+            <CalendarWidget events={needsOrg ? [] : upcomingEvents} onOpen={() => navigate("/calendar")} />
+            <TasksWidget items={needsOrg ? [] : tasks} onOpen={() => navigate("/tasks")} />
           </div>
         </div>
       </div>
+      </div>
+
+      {pickerOpen && <OrgPicker onClose={() => setPickerOpen(false)} />}
 
       <style>{`
         .dashboard-action-card {
@@ -689,6 +770,14 @@ export default function DashboardPage() {
 
         .incidents-widget:hover .incident-widget-row {
           box-shadow: 0 0.35rem 0.9rem rgba(55,71,79,0.05);
+        }
+
+        /* министерство ещё не выбрало организацию — дашборд виден, но неактивен */
+        .dash-disabled {
+          opacity: 0.42;
+          filter: grayscale(0.5);
+          pointer-events: none;
+          user-select: none;
         }
 
         .quick-action-btn {

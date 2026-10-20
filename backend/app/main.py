@@ -1,11 +1,15 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.active_org import ActiveOrgMiddleware
 from app.api.main import api_router
 from app.api.database.db import connect_to_db, close_db
 from app.api.redis_client import connect_to_redis, close_redis
 
 app = FastAPI()
+
+# Выбранная организация из заголовка X-Organization-Id — см. app/api/active_org.py
+app.add_middleware(ActiveOrgMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

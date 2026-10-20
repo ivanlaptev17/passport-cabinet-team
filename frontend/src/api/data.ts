@@ -1,10 +1,12 @@
+import { orgHeaders } from "../utils/activeOrg";
+
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
+    headers: { "Content-Type": "application/json", ...orgHeaders(), ...(init.headers ?? {}) },
   });
   if (!res.ok) throw new Error(`${res.status}`);
   return res.json();
@@ -51,6 +53,7 @@ export type Employee = {
   first_name: string | null;
   middle_name: string | null;
   phone: string | null;
+  contacts: string | null;
   fio: string | null;
   position_id: number | null;
   position: string | null;
@@ -239,7 +242,7 @@ export const fetchEducation = () => apiFetch<EducationActivity[]>("/data/educati
 
 // ── Updaters ──────────────────────────────────────────────────────────────────
 
-export const updateEmployee = (id: number, body: { fio?: string; position_id?: number }) =>
+export const updateEmployee = (id: number, body: { fio?: string; position_id?: number; contacts?: string }) =>
   apiFetch<Employee>(`/data/employees/${id}`, {
     method: "PUT",
     body: JSON.stringify(body),
@@ -378,6 +381,7 @@ export const uploadDocument = (formData: FormData) => {
   return fetch(`${API_URL}/data/documents`, {
     method: "POST",
     credentials: "include",
+    headers: orgHeaders(),
     body: formData,
   }).then((res) => {
     if (!res.ok) throw new Error(`${res.status}`);
@@ -423,7 +427,7 @@ export const getDocumentDownloadUrl = (id: number) => {
 
 export const downloadXlsx = async (path: string, filename: string): Promise<void> => {
   const API_URL = (import.meta.env.VITE_API_URL as string) ?? "http://localhost:8000";
-  const res = await fetch(`${API_URL}${path}`, { credentials: "include" });
+  const res = await fetch(`${API_URL}${path}`, { credentials: "include", headers: orgHeaders() });
   if (!res.ok) throw new Error(`${res.status}`);
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
@@ -478,6 +482,7 @@ export const generateDocumentTemplate = async (
   const res = await fetch(`${API_URL}/data/document-templates/${id}/generate`, {
     method: "POST",
     credentials: "include",
+    headers: orgHeaders(),
     body: fd,
   });
   if (!res.ok) throw new Error(`${res.status}`);

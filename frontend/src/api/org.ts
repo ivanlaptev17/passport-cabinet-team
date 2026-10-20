@@ -1,4 +1,5 @@
 import { ApiError } from "./tasks";
+import { orgHeaders } from "../utils/activeOrg";
 
 const API_URL = (import.meta.env.VITE_API_URL as string) ?? "http://localhost:8000";
 
@@ -6,7 +7,7 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
+    headers: { "Content-Type": "application/json", ...orgHeaders(), ...(init.headers ?? {}) },
   });
   if (!res.ok) {
     let detail = "";
@@ -58,3 +59,17 @@ export const updateOrgMember = (organizationId: number, userId: number, body: Me
     method: "PUT",
     body: JSON.stringify(body),
   });
+
+// ── Справочник для выбора организации ────────────────────────────────────────
+
+export type Municipality = { id: number; name: string; organizations: number };
+
+export type DirectoryOrg = { id: number; name: string; municipalities: string[] };
+
+export const fetchMunicipalities = () => apiFetch<Municipality[]>("/org/municipalities");
+
+export const searchOrganizations = (municipalityId: number | null, q: string) => {
+  const params = new URLSearchParams({ q, limit: "50" });
+  if (municipalityId) params.set("municipality_id", String(municipalityId));
+  return apiFetch<DirectoryOrg[]>(`/org/directory?${params}`);
+};

@@ -7,14 +7,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from app.api.database.db import get_connection
+from app.api import redis_client
 from app.api.database import db as _db
 from app.api.security import get_current_user, get_current_user_for_stream
 from app.api.permissions import (
     ORG_MANAGER_ROLES,
     ORG_MEMBER_ROLES,
     get_user_org_ids,
-    is_org_scoped_user,
     require_org_write_access,
+    scoped_org_ids,
 )
 
 
@@ -26,6 +27,7 @@ router = APIRouter(prefix="/data", tags=["data"])
 class EmployeeUpdate(BaseModel):
     fio: Optional[str] = None
     position_id: Optional[int] = None
+    contacts: Optional[str] = None
 
 
 class OrganizationUpdate(BaseModel):
@@ -74,9 +76,8 @@ def _naive(dt: datetime | None) -> datetime | None:
 
 
 async def _org_ids_filter(current_user: dict, conn) -> list[int] | None:
-    if is_org_scoped_user(current_user):
-        return await get_user_org_ids(current_user["id"], conn)
-    return None
+    # Логика одна на все разделы — с учётом выбранной организации, см. permissions.scoped_org_ids
+    return await scoped_org_ids(current_user, conn)
 
 
 
@@ -162,6 +163,7 @@ async def list_employees(
             e.first_name,
             e.middle_name,
             e.phone,
+            e.contacts,
             e.fio,
             p.id   AS position_id,
             p.name AS position,
@@ -607,9 +609,30 @@ async def update_employee(
     )
 
     if payload.fio is not None:
+        # Таблица показывает фамилию, имя и отчество отдельными полями — раньше правилось
+        # только fio, и изменение в списке было не видно
+        parts = payload.fio.split()
         await conn.execute(
-            "UPDATE employees SET fio = $1 WHERE id = $2",
-            payload.fio,
+            """
+            UPDATE employees
+            SET fio = $1, last_name = $2, first_name = $3, middle_name = $4
+            WHERE id = $5
+            """,
+            " ".join(parts) or None,
+            parts[0] if len(parts) > 0 else None,
+            parts[1] if len(parts) > 1 else None,
+            " ".join(parts[2:]) or None,
+            employee_id,
+        )
+
+        # в кэше именинников лежат имена — иначе календарь сутки показывал бы старое ФИО
+        for month in range(1, 13):
+            await redis_client.cache_drop(f"birthdays:{existing['organization_id']}:{month}")
+
+    if payload.contacts is not None:
+        await conn.execute(
+            "UPDATE employees SET contacts = $1 WHERE id = $2",
+            payload.contacts.strip()[:2000] or None,
             employee_id,
         )
 
@@ -637,6 +660,7 @@ async def update_employee(
             e.first_name,
             e.middle_name,
             e.phone,
+            e.contacts,
             e.fio,
             p.id AS position_id,
             p.name AS position,
@@ -939,7 +963,7 @@ async def list_events(
     current_user=Depends(get_current_user),
     conn=Depends(get_connection),
 ):
-    org_ids = await get_user_org_ids(current_user["id"], conn) if is_org_scoped_user(current_user) else None
+    org_ids = await scoped_org_ids(current_user, conn)
 
     where = "WHERE ($1::bigint[] IS NULL OR e.organization_id = ANY($1))"
     params: list = [org_ids]
@@ -966,7 +990,7 @@ async def upcoming_events(
     current_user=Depends(get_current_user),
     conn=Depends(get_connection),
 ):
-    org_ids = await get_user_org_ids(current_user["id"], conn) if is_org_scoped_user(current_user) else None
+    org_ids = await scoped_org_ids(current_user, conn)
     rows = await conn.fetch(
         f"""
         {_EVENT_SELECT}

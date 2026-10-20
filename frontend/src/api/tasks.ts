@@ -1,10 +1,12 @@
+import { orgHeaders } from "../utils/activeOrg";
+
 const API_URL = (import.meta.env.VITE_API_URL as string) ?? "http://localhost:8000";
 
 async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
+    headers: { "Content-Type": "application/json", ...orgHeaders(), ...(init.headers ?? {}) },
   });
   if (!res.ok) {
     let detail = "";
@@ -54,6 +56,7 @@ export type OrgPermissions = {
 export type ContextOrganization = OrgPermissions & {
   id: number;
   name: string;
+  municipalities: string[];
   org_role_label: string | null;
 };
 
@@ -295,6 +298,7 @@ export const postMessageWithFile = async (taskId: number, file: File, body: stri
   const res = await fetch(`${API_URL}/tasks/${taskId}/messages/file`, {
     method: "POST",
     credentials: "include",
+    headers: orgHeaders(),
     body: fd,
   });
   if (!res.ok) {

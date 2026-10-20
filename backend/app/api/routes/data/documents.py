@@ -13,7 +13,8 @@ from app.api.permissions import (
     ORG_MANAGER_ROLES,
     ORG_MEMBER_ROLES,
     get_user_org_ids,
-    is_org_scoped_user,
+    has_global_view_access,
+    scoped_org_ids,
     require_org_write_access,
 )
 
@@ -42,7 +43,7 @@ async def list_documents(
     current_user=Depends(get_current_user),
     conn=Depends(get_connection),
 ):
-    org_ids = await get_user_org_ids(current_user["id"], conn) if is_org_scoped_user(current_user) else None
+    org_ids = await scoped_org_ids(current_user, conn)
 
     rows = await conn.fetch(
         """
@@ -219,8 +220,9 @@ async def download_document(
     if not row:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    # org-scoped users can only access their org's docs
-    if is_org_scoped_user(current_user):
+    # Кроме администратора системы и министерства — только документы своих организаций.
+    # Раньше проверка действовала лишь для двух ролей, и остальные скачивали любые документы
+    if not has_global_view_access(current_user):
         org_ids = await get_user_org_ids(current_user["id"], conn)
         if row["organization_id"] not in org_ids:
             raise HTTPException(status_code=403, detail="Access denied")

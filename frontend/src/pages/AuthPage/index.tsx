@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { loginUser, registerUser } from "../../api/auth";
+import Footer from "../../components/Footer";
 
 const AuthPage = () => {
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -29,10 +30,8 @@ const AuthPage = () => {
   };
 
   return (
-    <div
-      className="min-vh-100 d-flex align-items-center justify-content-center"
-      style={{ background: "#eceff1" }}
-    >
+    <div className="min-vh-100 d-flex flex-column" style={{ background: "#eceff1" }}>
+    <div className="flex-grow-1 d-flex align-items-center justify-content-center py-4">
       <div className="card shadow-sm" style={{ width: 380, border: "none" }}>
         <div
           className="card-header text-white text-center py-3"
@@ -104,6 +103,8 @@ const AuthPage = () => {
           </div>
         </div>
       </div>
+    </div>
+    <Footer />
     </div>
   );
 };

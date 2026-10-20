@@ -1,4 +1,4 @@
-export type RoleCode = 'ADMIN' | 'DIRECTOR' | 'MINOBR' | 'SCHOOL_STAFF';
+export type RoleCode = 'ADMIN' | 'DIRECTOR' | 'MINOBR' | 'SCHOOL_STAFF' | 'OMSU';
 
 export interface User {
   id: number;

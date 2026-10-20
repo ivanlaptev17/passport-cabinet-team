@@ -5,6 +5,8 @@ import {
   type CalendarEvent, type OrgUser, type EventCreate, type Organization,
 } from "../../api/data";
 import { useAuth } from "../../contexts/AuthContext";
+import { fetchBirthdays, type Birthday } from "../../api/staff";
+import { useOrgScope } from "../../hooks/useOrgScope";
 import Layout from "../../components/Layout";
 import DateField from "../../components/DateField";
 
@@ -13,6 +15,7 @@ const MONTHS = ["Январь","Февраль","Март","Апрель","Ма�
 
 const fmtTime = (d: string) => new Date(d).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
 const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+const birthdayName = (b: Birthday) => [b.last_name, b.first_name].filter(Boolean).join(" ") || "Сотрудник";
 
 type Modal = { mode: "create"; date: Date } | { mode: "edit"; event: CalendarEvent } | { mode: "day"; date: Date; events: CalendarEvent[] };
 
@@ -62,6 +65,9 @@ export default function CalendarPage() {
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const canEdit = user?.role_code !== "MINOBR";
+  // дни рождения видят те, кто ведёт «Отпуска и ДР»: Директор, Ответственный, Администратор ОО
+  const { canStaffCalendar } = useOrgScope();
+  const [birthdays, setBirthdays] = useState<Birthday[]>([]);
   const eventIdFromUrl = Number(searchParams.get("event")) || null;
   const autoOpenedRef = useRef(false);
 
@@ -91,6 +97,16 @@ export default function CalendarPage() {
   };
 
   useEffect(() => { load(cur); }, [cur]);
+  useEffect(() => {
+    if (!canStaffCalendar) return;
+    let alive = true;
+    fetchBirthdays(cur.getMonth() + 1)
+      .then((list) => alive && setBirthdays(list))
+      .catch(() => alive && setBirthdays([]));
+    return () => {
+      alive = false;
+    };
+  }, [cur, canStaffCalendar]);
   useEffect(() => {
     fetchOrgUsers().then(setOrgUsers).catch(() => null);
     fetchOrganizations().then(setOrganizations).catch(() => null);
@@ -131,6 +147,21 @@ export default function CalendarPage() {
     return map;
   }, [events]);
 
+  // день рождения повторяется каждый год — привязываем к дню показанного месяца
+  const birthdaysByDay = useMemo(() => {
+    const map = new Map<string, Birthday[]>();
+    if (!canStaffCalendar) return map;
+    for (const b of birthdays) {
+      // 29 февраля в невисокосный год празднуют 28-го — иначе Date уезжает на 1 марта
+      const lastDay = new Date(cur.getFullYear(), cur.getMonth() + 1, 0).getDate();
+      const day = Math.min(Number(b.birth_date.slice(8, 10)), lastDay);
+      const key = new Date(cur.getFullYear(), cur.getMonth(), day).toDateString();
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(b);
+    }
+    return map;
+  }, [birthdays, cur, canStaffCalendar]);
+
   const openCreate = (date: Date) => {
     const orgId = defaultOrgId;
     setForm(emptyForm(orgId, date));
@@ -143,7 +174,8 @@ export default function CalendarPage() {
   };
 
   const openDay = (date: Date, dayEvents: CalendarEvent[]) => {
-    if (dayEvents.length === 0 && canEdit) { openCreate(date); return; }
+    const hasBirthdays = (birthdaysByDay.get(date.toDateString()) ?? []).length > 0;
+    if (dayEvents.length === 0 && !hasBirthdays && canEdit) { openCreate(date); return; }
     setModal({ mode: "day", date, events: dayEvents });
   };
 
@@ -261,6 +293,7 @@ export default function CalendarPage() {
           <div className="d-grid" style={{ gridTemplateColumns: "repeat(7, 1fr)" }}>
             {days.map((day, i) => {
               const dayEvents = day ? (eventsByDay.get(day.toDateString()) ?? []) : [];
+              const dayBirthdays = day ? (birthdaysByDay.get(day.toDateString()) ?? []) : [];
               return (
                 <div
                   key={i}
@@ -289,6 +322,19 @@ export default function CalendarPage() {
                           color: isToday(day) ? "#fff" : "#333",
                         }}
                       >{day.getDate()}</div>
+                      {dayBirthdays.slice(0, 2).map((b) => (
+                        <div
+                          key={`b-${b.employee_id}`}
+                          className="text-truncate rounded px-1 mb-1"
+                          style={{ fontSize: 11, background: "#fce4ec", color: "#ad1457" }}
+                          title={`День рождения: ${birthdayName(b)}`}
+                        >
+                          <i className="fa fa-cake-candles me-1" />{birthdayName(b)}
+                        </div>
+                      ))}
+                      {dayBirthdays.length > 2 && (
+                        <div style={{ fontSize: 11, color: "#ad1457" }}>+{dayBirthdays.length - 2} именинника</div>
+                      )}
                       {dayEvents.slice(0, 3).map((e) => (
                         <div
                           key={e.id}
@@ -327,6 +373,19 @@ export default function CalendarPage() {
                 <button className="btn-close btn-close-white" onClick={closeModal} />
               </div>
               <div className="modal-body p-0">
+                {(birthdaysByDay.get(modal.date.toDateString()) ?? []).map((b) => (
+                  <div key={`b-${b.employee_id}`} className="d-flex align-items-center gap-3 p-3 border-bottom" style={{ background: "#fff8fb" }}>
+                    <i className="fa fa-cake-candles" style={{ color: "#e91e63", fontSize: 18, minWidth: 44, textAlign: "center" }} />
+                    <div>
+                      <div className="fw-semibold" style={{ fontSize: 14 }}>
+                        {[b.last_name, b.first_name, b.middle_name].filter(Boolean).join(" ")}
+                      </div>
+                      <div className="text-muted" style={{ fontSize: 12 }}>
+                        День рождения, исполняется {modal.date.getFullYear() - Number(b.birth_date.slice(0, 4))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
                 {modal.events.map((e) => (
                   <div key={e.id} className="d-flex align-items-start gap-3 p-3 border-bottom">
                     <div className="text-center" style={{ minWidth: 44 }}>

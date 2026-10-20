@@ -13,6 +13,9 @@ import CalendarPage from "../pages/CalendarPage";
 import TasksPage from "../pages/TasksPage/index";
 import TaskPage from "../pages/TaskPage/index";
 import OrgAdminPage from "../pages/OrgAdminPage/index";
+import OmsuPage from "../pages/OmsuPage/index";
+import StaffCalendarPage from "../pages/StaffCalendarPage/index";
+import { useActiveOrg } from "../utils/activeOrg";
 import DocumentsPage from "../pages/DocumentsPage/index";
 import DocumentTemplatesPage from "../pages/DocumentTemplatesPage/index";
 import ProfilePage from "../pages/ProfilePage/index";
@@ -32,6 +35,8 @@ function AuthGuard({ element }: { element: React.ReactElement }) {
 
 function AppRoutes() {
   const { user, loading } = useAuth();
+  // Сменили организацию — все страницы монтируются заново и перечитывают данные уже по ней
+  const activeOrg = useActiveOrg();
   if (loading) {
     return (
       <div className="min-vh-100 d-flex align-items-center justify-content-center">
@@ -41,7 +46,7 @@ function AppRoutes() {
   }
 
   return (
-    <Routes>
+    <Routes key={activeOrg?.id ?? "none"}>
       <Route path="/" element={user ? <Navigate to="/dashboard" replace /> : <AuthPage />} />
       <Route path="/dashboard"    element={<AuthGuard element={<DashboardPage />} />} />
       <Route path="/employees"    element={<AuthGuard element={<EmployeesPage />} />} />
@@ -55,6 +60,8 @@ function AppRoutes() {
       <Route path="/tasks"        element={<AuthGuard element={<TasksPage />} />} />
       <Route path="/tasks/:taskId" element={<AuthGuard element={<TaskPage />} />} />
       <Route path="/org-admin"    element={<AuthGuard element={<OrgAdminPage />} />} />
+      <Route path="/omsu"         element={<AuthGuard element={<OmsuPage />} />} />
+      <Route path="/staff-calendar" element={<AuthGuard element={<StaffCalendarPage />} />} />
       {/* Инциденты переехали в задачи — старые ссылки не роняем */}
       <Route path="/incidents"    element={<Navigate to="/tasks" replace />} />
       <Route path="/documents"    element={<AuthGuard element={<DocumentsPage />} />} />
