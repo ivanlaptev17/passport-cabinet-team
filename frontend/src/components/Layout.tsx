@@ -50,7 +50,7 @@ function NavItem({
 export default function Layout({ children }: Props) {
   const { pathname, search } = useLocation();
   const scope = useOrgScope();
-  const { isGlobal, isOmsu, context, active, needsOrg, canSwitch, canStaffCalendar } = scope;
+  const { isGlobal, isOmsu, context, active, needsOrg, canSwitch, canStaffCalendar, roleBadge } = scope;
 
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [dataMenuOpen, setDataMenuOpen] = useState(false);
@@ -144,7 +144,7 @@ export default function Layout({ children }: Props) {
       <div className="sticky-top">
         <nav className="navbar navbar-dark shadow-sm" style={{ background: "linear-gradient(135deg, #37474f, #455a64)" }}>
           <div className="container-fluid px-4 py-2">
-            <ul className="navbar-nav flex-row gap-1 me-auto align-items-center flex-wrap">
+            <ul className="navbar-nav layout-nav flex-row gap-1 me-auto align-items-center flex-wrap">
               {isOmsu ? (
                 <NavItem to="/omsu" icon="fa-landmark" label="ОМСУ" active={pathname === "/omsu"} />
               ) : (
@@ -247,8 +247,8 @@ export default function Layout({ children }: Props) {
                   {initials}
                 </div>
                 {/* имя — только на широком экране: с вкладками шапка иначе переносится на вторую строку */}
-                <div className="text-start d-none d-xxl-block" style={{ lineHeight: 1.1 }}>
-                  <div className="fw-semibold" style={{ fontSize: 13 }}>{userLabel}</div>
+                <div className="text-start d-none d-xxl-block" style={{ lineHeight: 1.1, maxWidth: 170 }} title={userLabel}>
+                  <div className="fw-semibold text-truncate" style={{ fontSize: 13 }}>{userLabel}</div>
                   <div style={{ fontSize: 11, color: "rgba(255,255,255,0.68)" }}>Личный кабинет</div>
                 </div>
                 <i className={`fa ${userMenuOpen ? "fa-chevron-up" : "fa-chevron-down"}`} style={{ fontSize: 12, color: "rgba(255,255,255,0.82)" }} />
@@ -267,6 +267,12 @@ export default function Layout({ children }: Props) {
                       <div>
                         <div className="fw-semibold" style={{ fontSize: 14 }}>{userLabel}</div>
                         <div style={{ fontSize: 12, opacity: 0.82 }}>{profile?.email ?? "Нет данных"}</div>
+                        {roleBadge && (
+                          <div className="mt-1" style={{ fontSize: 12, opacity: 0.92 }}>
+                            <i className={`fa ${roleBadge.icon} me-1`} />
+                            {roleBadge.label}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -290,14 +296,14 @@ export default function Layout({ children }: Props) {
           </div>
         </nav>
 
-        {/* Организация — отдельным блоком, который «свисает» из шапки:
-            сразу видно, данные какой школы на экране */}
-        <div className="px-4 bg-light">
+        {/* Организация и роль — отдельными блоками, которые «свисают» из шапки:
+            слева — данные какой школы на экране, справа — под какой ролью смотрим */}
+        <div className="px-4 bg-light d-flex justify-content-between align-items-start gap-2">
           <div className="org-tab d-inline-flex align-items-center gap-2 px-3 py-2">
             {isOmsu ? (
               <>
-                <i className="fa fa-landmark" />
-                <span className="fw-semibold text-truncate">ОМСУ{omsuRegion ? ` · ${omsuRegion}` : ""}</span>
+                <i className="fa fa-map-location-dot" />
+                <span className="fw-semibold text-truncate">{omsuRegion ?? "ОМСУ"}</span>
               </>
             ) : active ? (
               <>
@@ -329,6 +335,13 @@ export default function Layout({ children }: Props) {
               </>
             )}
           </div>
+
+          {roleBadge && (
+            <div className="org-tab role-tab d-inline-flex align-items-center gap-2 px-3 py-2" title={roleBadge.label}>
+              <i className={`fa ${roleBadge.icon}`} />
+              <span className="d-none d-sm-inline text-nowrap">{roleBadge.label}</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -368,6 +381,14 @@ export default function Layout({ children }: Props) {
           max-width: 100%;
           box-shadow: 0 6px 14px rgba(55,71,79,0.18);
         }
+        /* на 1200–1599px с подписями вкладок впритык: у админа их больше всех,
+           и шапка уходила на вторую строку */
+        @media (min-width: 1200px) and (max-width: 1599.98px) {
+          .layout-nav .nav-link { padding-left: 6px !important; padding-right: 6px !important; font-size: 14.5px; }
+          .layout-nav .nav-link > i.me-xl-2 { margin-right: 5px !important; }
+        }
+        .org-tab { min-width: 0; }
+        .role-tab { flex-shrink: 0; background: linear-gradient(135deg, #546e7a, #5f7682); }
         .org-tab-region { color: rgba(255,255,255,0.72); font-size: 12px; }
         .org-tab-btn {
           color: #fff; border: 1px solid rgba(255,255,255,0.35); border-radius: 999px;
