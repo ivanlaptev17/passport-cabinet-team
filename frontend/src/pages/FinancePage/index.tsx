@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   fetchFinance, fetchSubsidies, fetchContracts, fetchFinanceCategories,
   type FinanceRecord, type Subsidy, type Contract, type FinanceCategory,
@@ -26,6 +26,9 @@ const TAB_LABELS: Record<Tab, string> = {
 
 const FINANCE_TABS: Tab[] = ["FINANCE", "SALARY", "EXPENSES", "FUNDS", "PRESCHOOL", "subsidies", "EXTRABUDGET", "contracts"];
 
+const financeTabFromSearch = (params: URLSearchParams): Tab =>
+  FINANCE_TABS.find((value) => value === params.get("tab")) ?? "FINANCE";
+
 const fmt = (n: number | null) =>
   n == null ? "—" : n.toLocaleString("ru-RU", { minimumFractionDigits: 2 });
 
@@ -37,7 +40,8 @@ const optionalAmount = (value: OrgDataFormValue) => {
 };
 
 export default function FinancePage() {
-  const [tab, setTab] = useState<Tab>("FINANCE");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = financeTabFromSearch(searchParams);
   const [finance, setFinance] = useState<FinanceRecord[]>([]);
   const [subsidies, setSubsidies] = useState<Subsidy[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -47,6 +51,13 @@ export default function FinancePage() {
   const [search, setSearch] = useState("");
   const navigate = useNavigate();
   const { canWrite, organizationId } = useOrgDataPermissions();
+  const selectTab = (nextTab: Tab) => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set("tab", nextTab);
+      return next;
+    });
+  };
 
   useEffect(() => {
     Promise.all([fetchFinance(), fetchSubsidies(), fetchContracts(), fetchFinanceCategories()])
@@ -155,7 +166,7 @@ export default function FinancePage() {
           <li key={t} className="nav-item">
             <button
               className={`nav-link ${tab === t ? "active" : ""}`}
-              onClick={() => setTab(t)}
+              onClick={() => selectTab(t)}
             >
               {TAB_LABELS[t]} ({tabCount(t)})
             </button>

@@ -694,21 +694,21 @@ export default function DashboardPage() {
                   color="warning"
                   title="Финансовые записи"
                   subtitle="Расходы по разделам"
-                  onClick={() => navigate("/finance")}
+                  onClick={() => navigate("/finance?tab=FINANCE")}
                 />
                 <DashCard
                   icon="fa-handshake"
                   color="warning"
                   title="Субсидии"
                   subtitle="Субсидии и финансирование"
-                  onClick={() => navigate("/finance")}
+                  onClick={() => navigate("/finance?tab=subsidies")}
                 />
                 <DashCard
                   icon="fa-file-contract"
                   color="warning"
                   title="Контракты"
                   subtitle="Заключённые договоры"
-                  onClick={() => navigate("/finance")}
+                  onClick={() => navigate("/finance?tab=contracts")}
                 />
               </div>
             </div>
