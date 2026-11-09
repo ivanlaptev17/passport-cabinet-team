@@ -1,11 +1,12 @@
-from typing import Optional, List
+from typing import Any, Optional, List, Literal
 from datetime import date, datetime, timezone as _tz
 import asyncio
 import json as _json
+import math
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.api.database.db import get_connection
 from app.api import redis_client
 from app.api.database import db as _db
@@ -40,6 +41,12 @@ class OrganizationUpdate(BaseModel):
 class BuildingUpdate(BaseModel):
     name: Optional[str] = None
     address: Optional[str] = None
+
+
+class OrganizationDataMutation(BaseModel):
+    organization_id: Optional[int] = None
+    values: dict[str, Any] = Field(default_factory=dict)
+
 
 class IncidentCreate(BaseModel):
     organization_id: int
@@ -145,6 +152,15 @@ async def list_positions(
         """
     )
     return [dict(r) for r in rows]
+
+
+@router.get("/finance-categories")
+async def list_finance_categories(
+    _current_user=Depends(get_current_user),
+    conn=Depends(get_connection),
+):
+    rows = await conn.fetch("SELECT id, name, code FROM finance_categories ORDER BY name")
+    return [dict(row) for row in rows]
 
 
 @router.get("/employees")
@@ -772,6 +788,394 @@ async def update_building(
         building_id,
     )
     return dict(row)
+
+
+_ORG_DATA_CONFIG = {
+    "buildings": {
+        "table": "buildings",
+        "fields": {"name", "address"},
+        "required": {"name"},
+        "string_fields": {"name", "address"},
+        "roles": ORG_MANAGER_ROLES,
+        "select": """
+            SELECT b.id, b.organization_id, b.name, b.address, b.created_at, o.name AS organization
+            FROM buildings b JOIN organizations o ON o.id = b.organization_id
+            WHERE b.id = $1
+        """,
+    },
+    "employees": {
+        "table": "employees",
+        "fields": {"fio", "position_id", "contacts"},
+        "required": {"fio"},
+        "string_fields": {"fio", "contacts"},
+        "integer_fields": {"position_id"},
+        "roles": ORG_MEMBER_ROLES,
+        "select": """
+            SELECT e.id, e.organization_id, e.last_name, e.first_name, e.middle_name,
+                   e.phone, e.contacts, e.fio, p.id AS position_id, p.name AS position,
+                   c.id AS category_id, c.name AS category, c.code AS category_code,
+                   o.name AS organization
+            FROM employees e JOIN organizations o ON o.id = e.organization_id
+            LEFT JOIN employee_positions ep ON ep.employee_id = e.id
+            LEFT JOIN positions p ON p.id = ep.position_id
+            LEFT JOIN categories c ON c.id = p.category_id
+            WHERE e.id = $1
+        """,
+    },
+    "staff-info": {
+        "table": "staff_general_infos",
+        "fields": {"attribute", "value", "real_value", "is_filled"},
+        "required": {"attribute"},
+        "string_fields": {"attribute", "value", "real_value"},
+        "boolean_fields": {"is_filled"},
+        "roles": ORG_MEMBER_ROLES,
+        "select": """
+            SELECT si.id, si.organization_id, o.name AS organization,
+                   si.attribute, si.value, si.real_value, si.is_filled
+            FROM staff_general_infos si JOIN organizations o ON o.id = si.organization_id
+            WHERE si.id = $1
+        """,
+    },
+    "finance": {
+        "table": "finance_records",
+        "fields": {"section_code", "attribute", "value", "is_filled"},
+        "required": {"section_code", "attribute"},
+        "string_fields": {"section_code", "attribute"},
+        "boolean_fields": {"is_filled"},
+        "numeric_fields": {"value"},
+        "roles": ORG_MEMBER_ROLES,
+        "select": """
+            SELECT fr.id, fr.organization_id, o.name AS organization, fc.code AS section_code,
+                   fr.attribute, fr.value, fr.is_filled
+            FROM finance_records fr JOIN organizations o ON o.id = fr.organization_id
+            LEFT JOIN finance_categories fc ON fc.id = fr.category_id
+            WHERE fr.id = $1
+        """,
+    },
+    "subsidies": {
+        "table": "subsidies",
+        "fields": {"name", "amount"},
+        "required": {"name"},
+        "string_fields": {"name"},
+        "numeric_fields": {"amount"},
+        "roles": ORG_MEMBER_ROLES,
+        "select": """
+            SELECT s.id, s.organization_id, o.name AS organization, s.name, s.amount
+            FROM subsidies s JOIN organizations o ON o.id = s.organization_id
+            WHERE s.id = $1
+        """,
+    },
+    "contracts": {
+        "table": "contracts",
+        "fields": {"name", "link"},
+        "required": {"name"},
+        "string_fields": {"name", "link"},
+        "roles": ORG_MEMBER_ROLES,
+        "select": """
+            SELECT c.id, c.organization_id, o.name AS organization, c.name, c.link
+            FROM contracts c JOIN organizations o ON o.id = c.organization_id
+            WHERE c.id = $1
+        """,
+    },
+    "contingent": {
+        "table": "student_contingents",
+        "fields": {"attribute", "value", "is_filled"},
+        "required": {"attribute"},
+        "string_fields": {"attribute"},
+        "boolean_fields": {"is_filled"},
+        "integer_fields": {"value"},
+        "roles": ORG_MEMBER_ROLES,
+        "select": """
+            SELECT sc.id, sc.organization_id, o.name AS organization,
+                   sc.attribute, sc.value, sc.is_filled
+            FROM student_contingents sc JOIN organizations o ON o.id = sc.organization_id
+            WHERE sc.id = $1
+        """,
+    },
+    "classes": {
+        "table": "school_classes",
+        "fields": {"name", "grade_level", "student_count"},
+        "required": {"name"},
+        "string_fields": {"name"},
+        "integer_fields": {"grade_level", "student_count"},
+        "roles": ORG_MEMBER_ROLES,
+        "select": """
+            SELECT sc.id, sc.organization_id, o.name AS organization, sc.name,
+                   gl.number AS grade_level, sc.student_count
+            FROM school_classes sc JOIN organizations o ON o.id = sc.organization_id
+            LEFT JOIN grade_levels gl ON gl.id = sc.grade_level_id
+            WHERE sc.id = $1
+        """,
+    },
+    "parallels": {
+        "table": "grade_parallel_counts",
+        "fields": {"title", "values", "is_filled"},
+        "required": {"title"},
+        "string_fields": {"title"},
+        "boolean_fields": {"is_filled"},
+        "integer_array_fields": {"values"},
+        "roles": ORG_MEMBER_ROLES,
+        "select": """
+            SELECT gpc.id, gpc.organization_id, o.name AS organization,
+                   gpc.title, gpc.values, gpc.is_filled
+            FROM grade_parallel_counts gpc JOIN organizations o ON o.id = gpc.organization_id
+            WHERE gpc.id = $1
+        """,
+    },
+    "education": {
+        "table": "education_activities",
+        "fields": {"activity_type", "attribute", "value", "is_filled", "is_heading", "item_order"},
+        "required": {"attribute"},
+        "string_fields": {"activity_type", "attribute", "value"},
+        "boolean_fields": {"is_filled", "is_heading"},
+        "integer_fields": {"item_order"},
+        "roles": ORG_MEMBER_ROLES,
+        "select": """
+            SELECT ea.id, ea.organization_id, o.name AS organization,
+                   eat.name AS activity_type, ea.attribute, ea.value, ea.is_filled,
+                   ea.is_heading, ea.item_order
+            FROM education_activities ea JOIN organizations o ON o.id = ea.organization_id
+            LEFT JOIN education_activity_types eat ON eat.id = ea.type_id
+            WHERE ea.id = $1
+        """,
+    },
+}
+
+
+def _validate_org_data_values(resource: str, values: dict[str, Any], creating: bool) -> dict[str, Any]:
+    config = _ORG_DATA_CONFIG[resource]
+    unknown = values.keys() - config["fields"]
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"Unsupported fields: {', '.join(sorted(unknown))}")
+    missing = config["required"] - values.keys() if creating else set()
+    if missing:
+        raise HTTPException(status_code=422, detail=f"Required fields: {', '.join(sorted(missing))}")
+
+    for key, value in values.items():
+        if key in config.get("string_fields", set()):
+            if value is not None and not isinstance(value, str):
+                raise HTTPException(status_code=422, detail=f"{key} must be a string")
+            if key in config["required"] and (not isinstance(value, str) or not value.strip()):
+                raise HTTPException(status_code=422, detail=f"{key} is required")
+            if isinstance(value, str):
+                cleaned = value.strip()
+                if key == "contacts":
+                    cleaned = cleaned[:2000]
+                values[key] = cleaned or None
+        elif key in config.get("boolean_fields", set()):
+            if not isinstance(value, bool):
+                raise HTTPException(status_code=422, detail=f"{key} must be a boolean")
+        elif key in config.get("integer_fields", set()):
+            if value is not None and (not isinstance(value, int) or isinstance(value, bool)):
+                raise HTTPException(status_code=422, detail=f"{key} must be an integer")
+        elif key in config.get("integer_array_fields", set()):
+            if not isinstance(value, list) or any(not isinstance(item, int) or isinstance(item, bool) for item in value):
+                raise HTTPException(status_code=422, detail=f"{key} must be an array of integers")
+        elif key in config.get("numeric_fields", set()):
+            if value is not None and (
+                not isinstance(value, (int, float))
+                or isinstance(value, bool)
+                or not math.isfinite(value)
+            ):
+                raise HTTPException(status_code=422, detail=f"{key} must be a finite number")
+
+    return values
+
+
+async def _org_data_record(conn, resource: str, record_id: int):
+    row = await conn.fetchrow(_ORG_DATA_CONFIG[resource]["select"], record_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Record not found")
+    return dict(row)
+
+
+async def _org_data_db_fields(conn, resource: str, values: dict[str, Any]) -> dict[str, Any]:
+    result = dict(values)
+    if resource == "employees" and result.get("position_id") is not None:
+        position_exists = await conn.fetchval(
+            "SELECT 1 FROM positions WHERE id = $1",
+            result["position_id"],
+        )
+        if not position_exists:
+            raise HTTPException(status_code=422, detail="Unknown employee position")
+    elif resource == "finance" and "section_code" in result:
+        category_id = await conn.fetchval(
+            "SELECT id FROM finance_categories WHERE code = $1",
+            result.pop("section_code"),
+        )
+        if category_id is None:
+            raise HTTPException(status_code=422, detail="Unknown finance section")
+        result["category_id"] = category_id
+    elif resource == "classes" and "grade_level" in result:
+        grade = result.pop("grade_level")
+        grade_level_id = None
+        if grade is not None:
+            grade_level_id = await conn.fetchval("SELECT id FROM grade_levels WHERE number = $1", grade)
+            if grade_level_id is None:
+                raise HTTPException(status_code=422, detail="Unknown grade level")
+        result["grade_level_id"] = grade_level_id
+    elif resource == "education" and "activity_type" in result:
+        activity_type = result.pop("activity_type")
+        type_id = None
+        if activity_type is not None:
+            type_id = await conn.fetchval(
+                "SELECT id FROM education_activity_types WHERE name = $1",
+                activity_type,
+            )
+            if type_id is None:
+                raise HTTPException(status_code=422, detail="Unknown education activity type")
+        result["type_id"] = type_id
+    return result
+
+
+@router.post("/rows/{resource}", status_code=status.HTTP_201_CREATED)
+async def create_org_data_row(
+    resource: Literal["buildings", "employees", "staff-info", "finance", "subsidies", "contracts", "contingent", "classes", "parallels", "education"],
+    payload: OrganizationDataMutation,
+    current_user=Depends(get_current_user),
+    conn=Depends(get_connection),
+):
+    config = _ORG_DATA_CONFIG[resource]
+    if payload.organization_id is None:
+        raise HTTPException(status_code=422, detail="organization_id is required")
+    await require_org_write_access(
+        current_user,
+        payload.organization_id,
+        conn,
+        allowed_org_roles=config["roles"],
+    )
+    values = _validate_org_data_values(resource, dict(payload.values), creating=True)
+    db_values = await _org_data_db_fields(conn, resource, values)
+
+    if resource == "employees":
+        parts = values["fio"].split()
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                """
+                INSERT INTO employees (organization_id, fio, last_name, first_name, middle_name, contacts)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING id
+                """,
+                payload.organization_id,
+                " ".join(parts),
+                parts[0] if parts else None,
+                parts[1] if len(parts) > 1 else None,
+                " ".join(parts[2:]) or None,
+                values.get("contacts"),
+            )
+            if values.get("position_id") is not None:
+                await conn.execute(
+                    "INSERT INTO employee_positions (employee_id, position_id) VALUES ($1, $2)",
+                    row["id"],
+                    values["position_id"],
+                )
+            record_id = row["id"]
+    else:
+        columns = ["organization_id", *db_values]
+        args = [payload.organization_id, *db_values.values()]
+        placeholders = ", ".join(f"${index}" for index in range(1, len(args) + 1))
+        quoted_columns = ", ".join(f'"{column}"' for column in columns)
+        record_id = await conn.fetchval(
+            f"INSERT INTO {config['table']} ({quoted_columns}) VALUES ({placeholders}) RETURNING id",
+            *args,
+        )
+    return await _org_data_record(conn, resource, record_id)
+
+
+@router.put("/rows/{resource}/{record_id}")
+async def update_org_data_row(
+    resource: Literal["buildings", "employees", "staff-info", "finance", "subsidies", "contracts", "contingent", "classes", "parallels", "education"],
+    record_id: int,
+    payload: OrganizationDataMutation,
+    current_user=Depends(get_current_user),
+    conn=Depends(get_connection),
+):
+    config = _ORG_DATA_CONFIG[resource]
+    existing = await conn.fetchrow(
+        f"SELECT id, organization_id FROM {config['table']} WHERE id = $1",
+        record_id,
+    )
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Record not found")
+    await require_org_write_access(
+        current_user,
+        existing["organization_id"],
+        conn,
+        allowed_org_roles=config["roles"],
+    )
+    values = _validate_org_data_values(resource, dict(payload.values), creating=False)
+    if not values:
+        return await _org_data_record(conn, resource, record_id)
+    db_values = await _org_data_db_fields(conn, resource, values)
+
+    if resource == "employees":
+        async with conn.transaction():
+            if "fio" in values:
+                parts = (values["fio"] or "").split()
+                await conn.execute(
+                    """
+                    UPDATE employees SET fio = $1, last_name = $2, first_name = $3, middle_name = $4
+                    WHERE id = $5
+                    """,
+                    " ".join(parts) or None,
+                    parts[0] if parts else None,
+                    parts[1] if len(parts) > 1 else None,
+                    " ".join(parts[2:]) or None,
+                    record_id,
+                )
+                for month in range(1, 13):
+                    await redis_client.cache_drop(f"birthdays:{existing['organization_id']}:{month}")
+            if "contacts" in values:
+                await conn.execute(
+                    "UPDATE employees SET contacts = $1 WHERE id = $2",
+                    values["contacts"],
+                    record_id,
+                )
+            if "position_id" in values:
+                await conn.execute("DELETE FROM employee_positions WHERE employee_id = $1", record_id)
+                if values["position_id"] is not None:
+                    await conn.execute(
+                        "INSERT INTO employee_positions (employee_id, position_id) VALUES ($1, $2)",
+                        record_id,
+                        values["position_id"],
+                    )
+    else:
+        assignments = ", ".join(
+            f"\"{column}\" = ${index + 2}" for index, column in enumerate(db_values)
+        )
+        await conn.execute(
+            f"UPDATE {config['table']} SET {assignments} WHERE id = $1",
+            record_id,
+            *db_values.values(),
+        )
+    return await _org_data_record(conn, resource, record_id)
+
+
+@router.delete("/rows/{resource}/{record_id}")
+async def delete_org_data_row(
+    resource: Literal["buildings", "employees", "staff-info", "finance", "subsidies", "contracts", "contingent", "classes", "parallels", "education"],
+    record_id: int,
+    current_user=Depends(get_current_user),
+    conn=Depends(get_connection),
+):
+    config = _ORG_DATA_CONFIG[resource]
+    existing = await conn.fetchrow(
+        f"SELECT id, organization_id FROM {config['table']} WHERE id = $1",
+        record_id,
+    )
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Record not found")
+    await require_org_write_access(
+        current_user,
+        existing["organization_id"],
+        conn,
+        allowed_org_roles=config["roles"],
+    )
+    await conn.execute(f"DELETE FROM {config['table']} WHERE id = $1", record_id)
+    if resource == "employees":
+        for month in range(1, 13):
+            await redis_client.cache_drop(f"birthdays:{existing['organization_id']}:{month}")
+    return {"ok": True}
 
 
 @router.put("/incidents/{incident_id}")

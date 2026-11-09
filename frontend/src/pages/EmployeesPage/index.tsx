@@ -1,8 +1,33 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { fetchEmployees, fetchPositions, updateEmployee, exportEmployeesXlsx, type Employee, type Position } from "../../api/data";
+import {
+  createOrgDataRow,
+  deleteOrgDataRow,
+  fetchEmployees,
+  fetchPositions,
+  updateEmployee,
+  exportEmployeesXlsx,
+  type Employee,
+  type Position,
+} from "../../api/data";
 import Layout from "../../components/Layout";
-import { useAuth } from "../../contexts/AuthContext";
+import ConfirmModal from "../../components/ConfirmModal";
+import OrgDataEditor, { type OrgDataField } from "../../components/OrgDataEditor";
+import { useOrgDataPermissions } from "../../hooks/useOrgDataPermissions";
+
+const EMPLOYEE_FIELDS = (positions: Position[]): OrgDataField[] => [
+  { name: "fio", label: "ФИО", required: true, placeholder: "Фамилия Имя Отчество" },
+  {
+    name: "position_id",
+    label: "Должность",
+    type: "select",
+    options: positions.map((position) => ({
+      value: String(position.id),
+      label: `${position.name} (${position.category ?? "—"})`,
+    })),
+  },
+  { name: "contacts", label: "Контакты", type: "textarea" },
+];
 
 type Tab = "ALL" | "ADM" | "TEACH" | "TECH";
 
@@ -25,13 +50,14 @@ export default function EmployeesPage() {
   const [formPosId, setFormPosId] = useState<number | "">("");
   const [formContacts, setFormContacts] = useState("");
   const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null);
+  const [actionError, setActionError] = useState("");
 
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const canEdit = user?.role_code !== "MINOBR";
+  const { canWrite, organizationId } = useOrgDataPermissions();
 
   useEffect(() => {
-    setLoading(true);
     Promise.all([fetchEmployees(), fetchPositions()])
       .then(([emps, pos]) => { setEmployees(emps); setPositions(pos); })
       .catch((e: Error) => {
@@ -55,26 +81,66 @@ export default function EmployeesPage() {
 
   const openEdit = (emp: Employee) => {
     setEditing(emp);
+    setCreating(false);
+    setActionError("");
     setFormFio(emp.fio ?? "");
     setFormPosId(emp.position_id ?? "");
     setFormContacts(emp.contacts ?? "");
   };
 
-  const closeEdit = () => { setEditing(null); setFormFio(""); setFormPosId(""); setFormContacts(""); };
+  const openCreate = () => {
+    setEditing(null);
+    setCreating(true);
+    setActionError("");
+    setFormFio("");
+    setFormPosId("");
+    setFormContacts("");
+  };
+
+  const closeEdit = () => {
+    setEditing(null);
+    setCreating(false);
+    setFormFio("");
+    setFormPosId("");
+    setFormContacts("");
+    setActionError("");
+  };
 
   const saveEdit = async () => {
-    if (!editing) return;
+    if ((!editing && !creating) || !canWrite) return;
     setSaving(true);
     try {
-      const updated = await updateEmployee(editing.id, {
-        fio: formFio || undefined,
-        position_id: formPosId !== "" ? Number(formPosId) : undefined,
-        contacts: formContacts,
-      });
-      setEmployees((prev) => prev.map((e) => (e.id === updated.id ? { ...e, ...updated } : e)));
+      const body = {
+        fio: formFio,
+        position_id: formPosId !== "" ? Number(formPosId) : null,
+        contacts: formContacts || null,
+      };
+      if (creating) {
+        if (!organizationId) throw new Error("Сначала выберите организацию");
+        const created = await createOrgDataRow<Employee>("employees", organizationId, body);
+        setEmployees((prev) => [...prev, created]);
+      } else if (editing) {
+        const updated = await updateEmployee(editing.id, body);
+        setEmployees((prev) => prev.map((e) => (e.id === updated.id ? { ...e, ...updated } : e)));
+      }
       closeEdit();
-    } catch {
-      alert("Ошибка при сохранении");
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "Ошибка при сохранении");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeEmployee = async () => {
+    if (!deleteTarget) return;
+    setSaving(true);
+    try {
+      await deleteOrgDataRow("employees", deleteTarget.id);
+      setEmployees((prev) => prev.filter((employee) => employee.id !== deleteTarget.id));
+      setDeleteTarget(null);
+    } catch (e) {
+      setDeleteTarget(null);
+      setActionError(e instanceof Error ? e.message : "Ошибка при удалении");
     } finally {
       setSaving(false);
     }
@@ -92,13 +158,20 @@ export default function EmployeesPage() {
             <small className="text-muted">Список сотрудников по категориям</small>
           </div>
         </div>
-        <button
-          className="btn btn-sm btn-outline-success"
-          onClick={() => void exportEmployeesXlsx(tab === "ALL" ? undefined : tab)}
-        >
-          <i className="fa fa-file-excel me-1" />
-          Скачать xlsx
-        </button>
+        <div className="d-flex gap-2">
+          {canWrite && organizationId && (
+            <button className="btn btn-sm btn-outline-primary" onClick={openCreate}>
+              <i className="fa fa-plus me-1" />Добавить сотрудника
+            </button>
+          )}
+          <button
+            className="btn btn-sm btn-outline-success"
+            onClick={() => void exportEmployeesXlsx(tab === "ALL" ? undefined : tab)}
+          >
+            <i className="fa fa-file-excel me-1" />
+            Скачать xlsx
+          </button>
+        </div>
       </div>
 
       <div className="mb-3">
@@ -142,12 +215,12 @@ export default function EmployeesPage() {
                     <th>Отчество</th>
                     <th>Должность</th>
                     <th>Контакты</th>
-                    {canEdit && <th style={{ width: 60 }} className="text-center"><i className="fa fa-cog" /></th>}
+                    {canWrite && <th style={{ width: 90 }} className="text-center"><i className="fa fa-cog" /></th>}
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.length === 0 ? (
-                    <tr><td colSpan={canEdit ? 6 : 5} className="text-center text-muted py-4">Данные отсутствуют</td></tr>
+                    <tr><td colSpan={canWrite ? 6 : 5} className="text-center text-muted py-4">Данные отсутствуют</td></tr>
                   ) : filtered.map((emp) => (
                     <tr key={emp.id}>
                       <td className="fw-semibold">{emp.last_name ?? "—"}</td>
@@ -155,7 +228,7 @@ export default function EmployeesPage() {
                       <td>{emp.middle_name ?? "—"}</td>
                       <td>{emp.position ?? "—"}</td>
                       <td style={{ whiteSpace: "pre-wrap", fontSize: 13 }}>{emp.contacts ?? "—"}</td>
-                      {canEdit && (
+                      {canWrite && (
                         <td className="text-center">
                           <button
                             className="btn btn-sm btn-outline-secondary py-0 px-2"
@@ -163,6 +236,13 @@ export default function EmployeesPage() {
                             onClick={() => openEdit(emp)}
                           >
                             <i className="fa fa-pencil" />
+                          </button>
+                          <button
+                            className="btn btn-sm btn-outline-danger py-0 px-2 ms-1"
+                            title="Удалить"
+                            onClick={() => { setActionError(""); setDeleteTarget(emp); }}
+                          >
+                            <i className="fa fa-trash" />
                           </button>
                         </td>
                       )}
@@ -175,49 +255,36 @@ export default function EmployeesPage() {
         </>
       )}
 
-      {canEdit && editing && (
-        <div className="modal show d-block" style={{ background: "rgba(0,0,0,0.45)" }} onClick={closeEdit}>
-          <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-content">
-              <div className="modal-header" style={{ background: "#37474f", color: "white" }}>
-                <h6 className="modal-title mb-0 fw-semibold"><i className="fa fa-pencil me-2" />Редактировать сотрудника</h6>
-                <button className="btn-close btn-close-white" onClick={closeEdit} />
-              </div>
-              <div className="modal-body">
-                <div className="mb-3">
-                  <label className="form-label small fw-semibold">ФИО</label>
-                  <input type="text" className="form-control" value={formFio}
-                    onChange={(e) => setFormFio(e.target.value)} placeholder="Фамилия Имя Отчество" />
-                </div>
-                <div className="mb-3">
-                  <label className="form-label small fw-semibold">Должность</label>
-                  <select className="form-select" value={formPosId}
-                    onChange={(e) => setFormPosId(e.target.value ? Number(e.target.value) : "")}>
-                    <option value="">— не указана —</option>
-                    {positions.map((p) => (
-                      <option key={p.id} value={p.id}>{p.name} ({p.category ?? "—"})</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="mb-3">
-                  <label className="form-label small fw-semibold">Контакты</label>
-                  <textarea className="form-control" rows={3} value={formContacts}
-                    onChange={(e) => setFormContacts(e.target.value)}
-                    placeholder={"Телефоны, почта, мессенджеры — в свободной форме"} />
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button className="btn btn-secondary btn-sm" onClick={closeEdit}>Отмена</button>
-                <button className="btn btn-sm text-white" style={{ background: "#37474f" }}
-                  disabled={saving} onClick={() => void saveEdit()}>
-                  {saving && <span className="spinner-border spinner-border-sm me-1" />}
-                  Сохранить
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+      {canWrite && (editing || creating) && (
+        <OrgDataEditor
+          title={creating ? "Новый сотрудник" : "Редактировать сотрудника"}
+          fields={EMPLOYEE_FIELDS(positions)}
+          values={{
+            fio: formFio,
+            position_id: formPosId === "" ? "" : String(formPosId),
+            contacts: formContacts,
+          }}
+          saving={saving}
+          error={actionError}
+          onChange={(name, value) => {
+            if (name === "fio" && typeof value === "string") setFormFio(value);
+            if (name === "position_id" && typeof value === "string") setFormPosId(value ? Number(value) : "");
+            if (name === "contacts" && typeof value === "string") setFormContacts(value);
+          }}
+          onSubmit={() => void saveEdit()}
+          onClose={closeEdit}
+        />
       )}
+      {canWrite && deleteTarget && (
+        <ConfirmModal
+          title="Удалить сотрудника?"
+          text={`Сотрудник «${deleteTarget.fio ?? ([deleteTarget.last_name, deleteTarget.first_name].filter(Boolean).join(" ") || "Без имени")}» будет удалён без возможности восстановления.`}
+          busy={saving}
+          onConfirm={() => void removeEmployee()}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+      {actionError && !editing && !creating && !deleteTarget && <div className="alert alert-danger mt-3">{actionError}</div>}
     </Layout>
   );
 }

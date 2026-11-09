@@ -8,7 +8,16 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
     credentials: "include",
     headers: { "Content-Type": "application/json", ...orgHeaders(), ...(init.headers ?? {}) },
   });
-  if (!res.ok) throw new Error(`${res.status}`);
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const body = await res.json();
+      detail = typeof body?.detail === "string" ? body.detail : "";
+    } catch {
+      // Не-JSON ответ — используем HTTP-код.
+    }
+    throw new Error(res.status === 401 ? "401" : detail || `${res.status}`);
+  }
   return res.json();
 }
 
@@ -45,6 +54,8 @@ export type Position = {
   category: string | null;
   category_code: string | null;
 };
+
+export type FinanceCategory = { id: number; name: string; code: string };
 
 export type Employee = {
   id: number;
@@ -147,6 +158,7 @@ export type IncidentUpdate = {
 
 export const fetchProfile = () => apiFetch<Profile>("/data/profile");
 export const fetchPositions = () => apiFetch<Position[]>("/data/positions");
+export const fetchFinanceCategories = () => apiFetch<FinanceCategory[]>("/data/finance-categories");
 export const fetchEmployees = (category?: string) =>
   apiFetch<Employee[]>(`/data/employees${category ? `?category=${category}` : ""}`);
 export const fetchOrganizations = () =>
@@ -242,11 +254,50 @@ export const fetchEducation = () => apiFetch<EducationActivity[]>("/data/educati
 
 // ── Updaters ──────────────────────────────────────────────────────────────────
 
-export const updateEmployee = (id: number, body: { fio?: string; position_id?: number; contacts?: string }) =>
-  apiFetch<Employee>(`/data/employees/${id}`, {
-    method: "PUT",
-    body: JSON.stringify(body),
+export type OrgDataResource =
+  | "buildings"
+  | "employees"
+  | "staff-info"
+  | "finance"
+  | "subsidies"
+  | "contracts"
+  | "contingent"
+  | "classes"
+  | "parallels"
+  | "education";
+
+export type OrgDataValues = Record<
+  string,
+  string | number | boolean | number[] | null
+>;
+
+export const createOrgDataRow = <T>(
+  resource: OrgDataResource,
+  organizationId: number,
+  values: OrgDataValues,
+) =>
+  apiFetch<T>(`/data/rows/${resource}`, {
+    method: "POST",
+    body: JSON.stringify({ organization_id: organizationId, values }),
   });
+
+export const updateOrgDataRow = <T>(
+  resource: OrgDataResource,
+  id: number,
+  values: OrgDataValues,
+) =>
+  apiFetch<T>(`/data/rows/${resource}/${id}`, {
+    method: "PUT",
+    body: JSON.stringify({ values }),
+  });
+
+export const deleteOrgDataRow = (resource: OrgDataResource, id: number) =>
+  apiFetch<{ ok: boolean }>(`/data/rows/${resource}/${id}`, {
+    method: "DELETE",
+  });
+
+export const updateEmployee = (id: number, body: { fio?: string; position_id?: number | null; contacts?: string | null }) =>
+  updateOrgDataRow<Employee>("employees", id, body);
 
 export const updateOrganization = (
   id: number,
@@ -261,10 +312,7 @@ export const updateBuilding = (
   id: number,
   body: Partial<Pick<Building, "name" | "address">>,
 ) =>
-  apiFetch<Building>(`/data/buildings/${id}`, {
-    method: "PUT",
-    body: JSON.stringify(body),
-  });
+  updateOrgDataRow<Building>("buildings", id, body);
 
 
 export const fetchIncidents = () =>

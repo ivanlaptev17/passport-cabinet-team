@@ -1,12 +1,21 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  createOrgDataRow,
+  deleteOrgDataRow,
   fetchBuildings,
   updateBuilding,
   type Building,
 } from "../../api/data";
 import Layout from "../../components/Layout";
-import { useAuth } from "../../contexts/AuthContext";
+import ConfirmModal from "../../components/ConfirmModal";
+import OrgDataEditor, { type OrgDataField } from "../../components/OrgDataEditor";
+import { useOrgDataPermissions } from "../../hooks/useOrgDataPermissions";
+
+const BUILDING_FIELDS: OrgDataField[] = [
+  { name: "name", label: "Название", required: true },
+  { name: "address", label: "Адрес" },
+];
 
 export default function BuildingsPage() {
   const [buildings, setBuildings] = useState<Building[]>([]);
@@ -16,13 +25,13 @@ export default function BuildingsPage() {
   const [formName, setFormName] = useState("");
   const [formAddress, setFormAddress] = useState("");
   const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Building | null>(null);
+  const [actionError, setActionError] = useState("");
   const [search, setSearch] = useState("");
 
   const navigate = useNavigate();
-  const { user } = useAuth();
-
-  const canEdit =
-    user?.role_code === "ADMIN" || user?.role_code === "DIRECTOR";
+  const { canManage, organizationId } = useOrgDataPermissions();
 
   const q = search.toLowerCase();
   const filteredBuildings = buildings.filter(
@@ -43,34 +52,68 @@ export default function BuildingsPage() {
   }, [navigate]);
 
   const openEdit = (b: Building) => {
-    if (!canEdit) return;
+    if (!canManage) return;
 
     setEditing(b);
+    setCreating(false);
+    setActionError("");
     setFormName(b.name ?? "");
     setFormAddress(b.address ?? "");
   };
 
-  const closeEdit = () => {
+  const openCreate = () => {
     setEditing(null);
+    setCreating(true);
+    setActionError("");
     setFormName("");
     setFormAddress("");
   };
 
+  const closeEdit = () => {
+    setEditing(null);
+    setCreating(false);
+    setFormName("");
+    setFormAddress("");
+    setActionError("");
+  };
+
   const saveEdit = async () => {
-    if (!editing || !canEdit) return;
+    if ((!editing && !creating) || !canManage) return;
 
     setSaving(true);
     try {
-      const updated = await updateBuilding(editing.id, {
-        name: formName || undefined,
-        address: formAddress || undefined,
-      });
-      setBuildings((prev) =>
-        prev.map((b) => (b.id === updated.id ? updated : b)),
-      );
+      if (creating) {
+        if (!organizationId) throw new Error("Сначала выберите организацию");
+        const created = await createOrgDataRow<Building>("buildings", organizationId, {
+          name: formName,
+          address: formAddress || null,
+        });
+        setBuildings((prev) => [...prev, created]);
+      } else if (editing) {
+        const updated = await updateBuilding(editing.id, {
+          name: formName,
+          address: formAddress || null,
+        });
+        setBuildings((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
+      }
       closeEdit();
-    } catch {
-      alert("Ошибка при сохранении");
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "Ошибка при сохранении");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeBuilding = async () => {
+    if (!deleteTarget) return;
+    setSaving(true);
+    try {
+      await deleteOrgDataRow("buildings", deleteTarget.id);
+      setBuildings((prev) => prev.filter((b) => b.id !== deleteTarget.id));
+      setDeleteTarget(null);
+    } catch (e) {
+      setDeleteTarget(null);
+      setActionError(e instanceof Error ? e.message : "Ошибка при удалении");
     } finally {
       setSaving(false);
     }
@@ -95,6 +138,11 @@ export default function BuildingsPage() {
               <h5 className="mb-0 fw-semibold">Здания</h5>
               <small className="text-muted">Материально-техническая база</small>
             </div>
+            {canManage && organizationId && (
+              <button className="btn btn-sm btn-outline-primary ms-auto" onClick={openCreate}>
+                <i className="fa fa-plus me-1" />Добавить здание
+              </button>
+            )}
           </div>
 
           <div className="mb-3">
@@ -131,8 +179,8 @@ export default function BuildingsPage() {
                         <th>Название</th>
                         <th>Адрес</th>
                         <th>Дата создания</th>
-                        {canEdit && (
-                          <th style={{ width: 60 }} className="text-center">
+                        {canManage && (
+                          <th style={{ width: 90 }} className="text-center">
                             <i className="fa fa-cog" />
                           </th>
                         )}
@@ -142,7 +190,7 @@ export default function BuildingsPage() {
                       {filteredBuildings.length === 0 ? (
                         <tr>
                           <td
-                            colSpan={canEdit ? 5 : 4}
+                            colSpan={canManage ? 5 : 4}
                             className="text-center text-muted py-4"
                           >
                             Данные отсутствуют
@@ -157,7 +205,7 @@ export default function BuildingsPage() {
                             </td>
                             <td>{b.address ?? "—"}</td>
                             <td>{formatDate(b.created_at)}</td>
-                            {canEdit && (
+                            {canManage && (
                               <td className="text-center">
                                 <button
                                   className="btn btn-sm btn-outline-secondary py-0 px-2"
@@ -165,6 +213,13 @@ export default function BuildingsPage() {
                                   onClick={() => openEdit(b)}
                                 >
                                   <i className="fa fa-pencil" />
+                                </button>
+                                <button
+                                  className="btn btn-sm btn-outline-danger py-0 px-2 ms-1"
+                                  title="Удалить"
+                                  onClick={() => { setActionError(""); setDeleteTarget(b); }}
+                                >
+                                  <i className="fa fa-trash" />
                                 </button>
                               </td>
                             )}
@@ -180,73 +235,31 @@ export default function BuildingsPage() {
         </div>
       </div>
 
-      {canEdit && editing && (
-        <div
-          className="modal show d-block"
-          style={{ background: "rgba(0,0,0,0.45)" }}
-          onClick={closeEdit}
-        >
-          <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-content">
-              <div
-                className="modal-header"
-                style={{ background: "#37474f", color: "white" }}
-              >
-                <h6 className="modal-title mb-0 fw-semibold">
-                  <i className="fa fa-pencil me-2" />
-                  Редактировать здание
-                </h6>
-                <button
-                  type="button"
-                  className="btn-close btn-close-white"
-                  onClick={closeEdit}
-                />
-              </div>
-              <div className="modal-body">
-                <div className="mb-3">
-                  <label className="form-label small fw-semibold">
-                    Название
-                  </label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    value={formName}
-                    onChange={(e) => setFormName(e.target.value)}
-                  />
-                </div>
-                <div className="mb-3">
-                  <label className="form-label small fw-semibold">Адрес</label>
-                  <input
-                    type="text"
-                    className="form-control"
-                    value={formAddress}
-                    onChange={(e) => setFormAddress(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={closeEdit}
-                >
-                  Отмена
-                </button>
-                <button
-                  className="btn btn-sm text-white"
-                  style={{ background: "#37474f" }}
-                  disabled={saving}
-                  onClick={() => void saveEdit()}
-                >
-                  {saving && (
-                    <span className="spinner-border spinner-border-sm me-1" />
-                  )}
-                  Сохранить
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+      {canManage && (editing || creating) && (
+        <OrgDataEditor
+          title={creating ? "Новое здание" : "Редактировать здание"}
+          fields={BUILDING_FIELDS}
+          values={{ name: formName, address: formAddress }}
+          saving={saving}
+          error={actionError}
+          onChange={(name, value) => {
+            if (name === "name" && typeof value === "string") setFormName(value);
+            if (name === "address" && typeof value === "string") setFormAddress(value);
+          }}
+          onSubmit={() => void saveEdit()}
+          onClose={closeEdit}
+        />
       )}
+      {canManage && deleteTarget && (
+        <ConfirmModal
+          title="Удалить здание?"
+          text={`Здание «${deleteTarget.name ?? "Без названия"}» будет удалено без возможности восстановления.`}
+          busy={saving}
+          onConfirm={() => void removeBuilding()}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+      {actionError && !editing && !creating && !deleteTarget && <div className="alert alert-danger mt-3">{actionError}</div>}
     </Layout>
   );
 }

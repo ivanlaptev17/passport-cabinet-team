@@ -2,6 +2,16 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchStaffInfo, type StaffInfo } from "../../api/data";
 import Layout from "../../components/Layout";
+import type { OrgDataField } from "../../components/OrgDataEditor";
+import { useOrgDataCrud } from "../../hooks/useOrgDataCrud";
+import { useOrgDataPermissions } from "../../hooks/useOrgDataPermissions";
+
+const STAFF_INFO_FIELDS: OrgDataField[] = [
+  { name: "attribute", label: "Атрибут", required: true },
+  { name: "value", label: "Значение" },
+  { name: "real_value", label: "Реальное значение" },
+  { name: "is_filled", label: "Считать заполненным", type: "checkbox" },
+];
 
 export default function StaffInfoPage() {
   const [rows, setRows] = useState<StaffInfo[]>([]);
@@ -9,6 +19,7 @@ export default function StaffInfoPage() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const navigate = useNavigate();
+  const { canWrite, organizationId } = useOrgDataPermissions();
 
   useEffect(() => {
     fetchStaffInfo()
@@ -24,6 +35,22 @@ export default function StaffInfoPage() {
     r.attribute.toLowerCase().includes(search.toLowerCase()) ||
     r.organization.toLowerCase().includes(search.toLowerCase())
   );
+  const crud = useOrgDataCrud<StaffInfo>({
+    resource: "staff-info",
+    setRows,
+    fields: STAFF_INFO_FIELDS,
+    defaults: { attribute: "", value: "", real_value: "", is_filled: false },
+    toFormValues: (r) => ({ attribute: r.attribute, value: r.value ?? "", real_value: r.real_value ?? "", is_filled: r.is_filled }),
+    toPayload: (v) => ({
+      attribute: String(v.attribute ?? ""),
+      value: String(v.value ?? "") || null,
+      real_value: String(v.real_value ?? "") || null,
+      is_filled: v.is_filled === true,
+    }),
+    itemName: "показатель",
+    canWrite,
+    organizationId,
+  });
 
   return (
     <Layout>
@@ -46,6 +73,7 @@ export default function StaffInfoPage() {
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
+      <div className="d-flex justify-content-end mb-3">{crud.addButton}</div>
 
       {loading && <div className="text-center py-5"><div className="spinner-border text-secondary" /></div>}
       {error && <div className="alert alert-danger">{error}</div>}
@@ -64,11 +92,12 @@ export default function StaffInfoPage() {
                   <th className="text-end">Значение</th>
                   <th className="text-end">Реальное значение</th>
                   <th className="text-center">Считать заполненным</th>
+                  {canWrite && <th className="text-center">Действия</th>}
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={4} className="text-center text-muted py-4">Данные отсутствуют</td></tr>
+                  <tr><td colSpan={canWrite ? 5 : 4} className="text-center text-muted py-4">Данные отсутствуют</td></tr>
                 ) : (
                   filtered.map((r) => (
                     <tr key={r.id}>
@@ -80,6 +109,7 @@ export default function StaffInfoPage() {
                           ? <span className="badge bg-success">Да</span>
                           : <span className="badge bg-secondary">Нет</span>}
                       </td>
+                      {canWrite && <td className="text-center text-nowrap">{crud.rowActions(r)}</td>}
                     </tr>
                   ))
                 )}
@@ -89,6 +119,7 @@ export default function StaffInfoPage() {
         </div>
         </>
       )}
+      {crud.modals}
     </Layout>
   );
 }
